@@ -519,8 +519,38 @@
     color: var(--muted);
     font-size: 13.5px;
   }
+  .pdf-modal-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(10,12,16,0.55);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: background .15s ease, border-color .15s ease, opacity .15s ease;
+    z-index: 5;
+  }
+  .pdf-modal-nav-btn:hover {
+    background: rgba(110,168,254,0.35);
+    border-color: var(--accent);
+  }
+  .pdf-modal-nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+    pointer-events: none;
+  }
+  .pdf-modal-prev { left: 14px; }
+  .pdf-modal-next { right: 14px; }
   @media (max-width: 640px) {
     .pdf-modal { height: 92vh; }
+    .pdf-modal-nav-btn { width: 36px; height: 36px; }
   }
 
   ::-webkit-scrollbar { width: 8px; }
@@ -542,10 +572,10 @@
       <path d="m8 16 4-4 4 4"/>
     </svg>
     <div class="dz-text">
-      <div class="dz-title">Drop ZIP file(s) or a folder here</div>
-      <div class="dz-sub">or click to browse — multiple zips supported</div>
+      <div class="dz-title">Drop ZIP file(s), PDFs, or a folder here</div>
+      <div class="dz-sub">or click to browse — multiple zips/PDFs supported</div>
     </div>
-    <input type="file" id="fileInput" accept=".zip" multiple>
+    <input type="file" id="fileInput" accept=".zip,.pdf" multiple>
   </div>
 
   <div class="top-controls">
@@ -568,7 +598,7 @@
         <path d="M13 4v6h6"/>
         <path d="M10 13v6M8 15h4M8 17h4"/>
       </svg>
-      <span>Import ZIP file(s) instead</span>
+      <span>Import ZIP or PDF file(s) instead</span>
     </button>
   </div>
   <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none;">
@@ -628,8 +658,8 @@
 
   <div class="rename-section" id="renameSection">
     <div class="rename-header">
-      <div class="rename-title">Rename source ZIPs</div>
-      <div class="rename-sub">category_caseNo_year.zip, based on the PDF filenames found inside each</div>
+      <div class="rename-title">Rename &amp; merge exports</div>
+      <div class="rename-sub">category_caseNo_year.zip — zips and loose PDFs sharing the same case are merged into one output</div>
     </div>
     <div class="download-bar">
       <button class="download-btn" id="renameDownloadBtn">
@@ -656,6 +686,12 @@
     <div class="pdf-modal-body" id="pdfModalBody">
       <div class="pdf-modal-loading" id="pdfModalLoading">Opening PDF…</div>
       <iframe id="pdfModalFrame" title="PDF preview"></iframe>
+      <button class="pdf-modal-nav-btn pdf-modal-prev" id="pdfModalPrev" aria-label="Previous PDF">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <button class="pdf-modal-nav-btn pdf-modal-next" id="pdfModalNext" aria-label="Next PDF">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
     </div>
   </div>
 </div>
@@ -690,8 +726,14 @@
   const pdfModalTitle   = document.getElementById('pdfModalTitle');
   const pdfModalClose   = document.getElementById('pdfModalClose');
   const pdfModalLoading = document.getElementById('pdfModalLoading');
+  const pdfModalPrev = document.getElementById('pdfModalPrev');
+  const pdfModalNext = document.getElementById('pdfModalNext');
 
   let currentPdfObjectUrl = null;
+  // The list of previewable PDFs in the currently-open folder, and where we are in it —
+  // lets the modal's arrow buttons step through without closing/reopening.
+  let currentPreviewList = [];
+  let currentPreviewIndex = -1;
 
   function openPdfPreview(arrayBuffer, title) {
     pdfModalTitle.textContent = title;
@@ -709,6 +751,23 @@
     pdfModalOverlay.classList.add('show');
   }
 
+  // Opens the PDF at `index` within currentPreviewList and updates arrow button states.
+  async function openPdfPreviewAt(index) {
+    if (index < 0 || index >= currentPreviewList.length) return;
+    currentPreviewIndex = index;
+    const item = currentPreviewList[index];
+
+    pdfModalPrev.disabled = index === 0;
+    pdfModalNext.disabled = index === currentPreviewList.length - 1;
+
+    try {
+      const data = await item.entry.async('arraybuffer');
+      openPdfPreview(data, item.displayPath.split(' » ').pop());
+    } catch (err) {
+      alert('Could not open this PDF: ' + err.message);
+    }
+  }
+
   function closePdfPreview() {
     pdfModalOverlay.classList.remove('show');
     pdfModalFrame.src = 'about:blank';
@@ -716,6 +775,7 @@
       URL.revokeObjectURL(currentPdfObjectUrl);
       currentPdfObjectUrl = null;
     }
+    currentPreviewIndex = -1;
   }
 
   pdfModalFrame.addEventListener('load', () => {
@@ -729,8 +789,13 @@
   pdfModalOverlay.addEventListener('click', e => {
     if (e.target === pdfModalOverlay) closePdfPreview();
   });
+  pdfModalPrev.addEventListener('click', () => openPdfPreviewAt(currentPreviewIndex - 1));
+  pdfModalNext.addEventListener('click', () => openPdfPreviewAt(currentPreviewIndex + 1));
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && pdfModalOverlay.classList.contains('show')) closePdfPreview();
+    if (!pdfModalOverlay.classList.contains('show')) return;
+    if (e.key === 'Escape') closePdfPreview();
+    else if (e.key === 'ArrowLeft') openPdfPreviewAt(currentPreviewIndex - 1);
+    else if (e.key === 'ArrowRight') openPdfPreviewAt(currentPreviewIndex + 1);
   });
 
   // Holds the original zip File objects from the most recent run,
@@ -739,6 +804,7 @@
   let loadedZipFiles = [];
   let zipRenameMap = [];
   let zipGroups = [];
+  let looseGroups = [];
   let currentFolderIndex = 0;
   const folderInput = document.getElementById('folderInput');
   const folderImportBtn = document.getElementById('folderImportBtn');
@@ -843,6 +909,7 @@
     loadedZipFiles = [];
     zipRenameMap = [];
     zipGroups = [];
+    looseGroups = [];
     currentFolderIndex = 0;
     folderTabsEl.innerHTML = '';
     folderTabsEl.classList.remove('show');
@@ -1002,6 +1069,34 @@
   // Given all the PDFs found inside one zip, figures out the single most
   // common category_caseNo_year across them (a case folder should be
   // consistent) and returns the suggested new zip filename, or null.
+  // Wraps a plain File so it can be used anywhere a JSZip file entry is expected
+  // (both expose an async(type) method that resolves to an ArrayBuffer) — this lets
+  // loose PDFs (not inside any zip) flow through the same preview/bundling code paths.
+  function wrapFileAsEntry(file) {
+    return { async: async () => file.arrayBuffer() };
+  }
+
+  // Resolves a filename collision by appending "_extra" (then "_extra2", "_extra3"...)
+  // before the extension, instead of the more generic "(1)" — e.g.
+  // "order.pdf" + "order.pdf" -> "order.pdf" and "order_extra.pdf".
+  function dedupeFilename(name, usedNames) {
+    if (!usedNames.has(name)) {
+      usedNames.add(name);
+      return name;
+    }
+    const dot = name.lastIndexOf('.');
+    const base = dot > -1 ? name.slice(0, dot) : name;
+    const ext = dot > -1 ? name.slice(dot) : '';
+    let candidate = `${base}_extra${ext}`;
+    let n = 2;
+    while (usedNames.has(candidate)) {
+      candidate = `${base}_extra${n}${ext}`;
+      n++;
+    }
+    usedNames.add(candidate);
+    return candidate;
+  }
+
   function suggestZipName(pdfDisplayPaths) {
     const tally = new Map(); // key "CAT_NO_YEAR" -> count
     for (const path of pdfDisplayPaths) {
@@ -1050,9 +1145,10 @@
   async function handleZips(files, options = {}) {
     const autoExport = !!options.autoExport;
     const zipFiles = files.filter(f => f.name.toLowerCase().endsWith('.zip'));
+    const loosePdfFiles = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
 
-    if (zipFiles.length === 0) {
-      alert('Please drop one or more .zip files.');
+    if (zipFiles.length === 0 && loosePdfFiles.length === 0) {
+      alert('Please drop one or more .zip files (or PDFs).');
       return;
     }
 
@@ -1063,6 +1159,7 @@
     loadedZipFiles = zipFiles;
     zipRenameMap = [];
     zipGroups = [];
+    looseGroups = [];
 
     try {
       for (let zi = 0; zi < zipFiles.length; zi++) {
@@ -1077,20 +1174,13 @@
           rootZip = await JSZip.loadAsync(file);
         } catch (err) {
           groupResults.push({ displayPath: file.name, unreadableZip: true, numPages: null });
-          zipRenameMap.push({ file, originalName: file.name, newName: null, matched: false });
+          zipRenameMap.push({ file, originalName: file.name, newName: null, matched: false, groupResults });
           zipGroups.push({ zipName: file.name, results: groupResults, totalPages: 0, pdfCount: 0 });
           continue;
         }
 
         const pdfEntries = await collectPdfs(rootZip, '');
-
         const suggested = suggestZipName(pdfEntries.filter(p => !p.unreadableZip).map(p => p.displayPath));
-        zipRenameMap.push({
-          file,
-          originalName: file.name,
-          newName: suggested,
-          matched: !!suggested
-        });
 
         let groupTotalPages = 0;
         let groupPdfCount = 0;
@@ -1124,12 +1214,74 @@
           return b.numPages - a.numPages;
         });
 
+        zipRenameMap.push({
+          file,
+          originalName: file.name,
+          newName: suggested,
+          matched: !!suggested,
+          groupResults
+        });
+
         zipGroups.push({
           zipName: file.name,
           results: groupResults,
           totalPages: groupTotalPages,
           pdfCount: groupPdfCount
         });
+      }
+
+      // Loose PDFs (not inside any zip) — grouped by the case pattern in each filename,
+      // so PDFs belonging to the same case end up together, same as a zip's contents would.
+      if (loosePdfFiles.length > 0) {
+        const bucketsByKey = new Map(); // key -> { files: [], results: [] }
+
+        for (const file of loosePdfFiles) {
+          setStatus(`Counting pages… ${file.name}`);
+          const foundDate = extractFinalOrderDate(file.name);
+          const parsed = extractCategoryCaseYear(file.name);
+          const key = parsed ? `${parsed.category}_${parsed.caseNo}_${parsed.year}` : '__unmatched__';
+
+          if (!bucketsByKey.has(key)) bucketsByKey.set(key, { files: [], results: [] });
+          const bucket = bucketsByKey.get(key);
+          bucket.files.push(file);
+
+          try {
+            const data = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: data.slice(0) }).promise;
+            bucket.results.push({
+              displayPath: file.name,
+              foundDate,
+              numPages: pdf.numPages,
+              entry: wrapFileAsEntry(file)
+            });
+          } catch (err) {
+            bucket.results.push({ displayPath: file.name, foundDate, numPages: null, error: true });
+          }
+        }
+
+        for (const [key, bucket] of bucketsByKey) {
+          bucket.results.sort((a, b) => {
+            if (a.numPages === null && b.numPages === null) return 0;
+            if (a.numPages === null) return 1;
+            if (b.numPages === null) return -1;
+            return b.numPages - a.numPages;
+          });
+          const totalPages = bucket.results.reduce((s, r) => s + (r.numPages || 0), 0);
+          const pdfCount = bucket.results.filter(r => r.entry).length;
+          const isUnmatched = key === '__unmatched__';
+
+          const group = {
+            zipName: isUnmatched ? 'Unmatched PDFs' : `${key}.zip`,
+            results: bucket.results,
+            totalPages,
+            pdfCount,
+            isLoose: true,
+            looseFiles: bucket.files,
+            looseKey: isUnmatched ? null : key
+          };
+          zipGroups.push(group);
+          looseGroups.push(group);
+        }
       }
 
       const anyPdfsFound = zipGroups.some(g => g.results.length > 0);
@@ -1213,6 +1365,9 @@
       fileList.appendChild(renderPdfRow(r));
     }
 
+    // Successfully-read PDFs, in display order — this is what the modal's arrows step through.
+    currentPreviewList = group.results.filter(r => r.entry);
+
     pdfCountEl.textContent = group.pdfCount;
     pageCountEl.textContent = group.totalPages;
 
@@ -1264,69 +1419,172 @@
 
     row.classList.add('clickable');
     row.title = 'Click to preview this PDF';
-    row.addEventListener('click', async () => {
-      try {
-        const previewData = await r.entry.async('arraybuffer');
-        openPdfPreview(previewData, r.displayPath.split(' » ').pop());
-      } catch (err) {
-        alert('Could not open this PDF: ' + err.message);
-      }
+    row.addEventListener('click', () => {
+      const idx = currentPreviewList.indexOf(r);
+      if (idx !== -1) openPdfPreviewAt(idx);
     });
 
     return row;
   }
 
+  // Builds the actual export plan: merges any real zip and any loose-PDF group that
+  // share the same suggested category_caseNo_year name into one combined output,
+  // so "zip + pdf belonging to the same case" become a single exported zip.
+  function buildExportPlan() {
+    const nameGroups = new Map(); // outputName -> { zips: [...zipRenameMap entries], looseGroups: [...group] }
+
+    for (const z of zipRenameMap) {
+      if (!z.matched) continue;
+      if (!nameGroups.has(z.newName)) nameGroups.set(z.newName, { zips: [], looseGroups: [] });
+      nameGroups.get(z.newName).zips.push(z);
+    }
+    for (const lg of looseGroups) {
+      if (!lg.looseKey) continue;
+      const key = `${lg.looseKey}.zip`;
+      if (!nameGroups.has(key)) nameGroups.set(key, { zips: [], looseGroups: [] });
+      nameGroups.get(key).looseGroups.push(lg);
+    }
+
+    const units = [];
+    const usedOutputNames = new Set();
+
+    for (const [key, bucket] of nameGroups) {
+      let outputName = key;
+      while (usedOutputNames.has(outputName)) {
+        outputName = outputName.replace(/\.zip$/i, '') + '_extra.zip';
+      }
+      usedOutputNames.add(outputName);
+
+      if (bucket.zips.length === 1 && bucket.looseGroups.length === 0) {
+        // Only one source, no merge needed — reuse the original zip bytes as-is (fast, preserves structure).
+        units.push({
+          outputName,
+          kind: 'fastcopy',
+          fastCopyFile: bucket.zips[0].file,
+          description: bucket.zips[0].originalName
+        });
+      } else {
+        // Two or more sources sharing this case identifier — rebuild a fresh combined zip.
+        const pdfSources = [];
+        const descParts = [];
+        for (const z of bucket.zips) {
+          for (const r of z.groupResults) {
+            if (r.entry) pdfSources.push({ entry: r.entry, name: r.displayPath.split(' » ').pop().split('/').pop() });
+          }
+          descParts.push(z.originalName);
+        }
+        for (const lg of bucket.looseGroups) {
+          for (const r of lg.results) {
+            if (r.entry) pdfSources.push({ entry: r.entry, name: r.displayPath });
+          }
+          descParts.push(`${lg.looseFiles.length} loose PDF${lg.looseFiles.length === 1 ? '' : 's'}`);
+        }
+        units.push({ outputName, kind: 'rebuild', pdfSources, description: descParts.join(' + ') });
+      }
+    }
+
+    // Zips with no recognizable pattern — kept standalone with their original name.
+    for (const z of zipRenameMap) {
+      if (z.matched) continue;
+      let outputName = z.originalName;
+      while (usedOutputNames.has(outputName)) {
+        const dot = outputName.lastIndexOf('.');
+        const base = dot > -1 ? outputName.slice(0, dot) : outputName;
+        const ext = dot > -1 ? outputName.slice(dot) : '';
+        outputName = `${base}_extra${ext}`;
+      }
+      usedOutputNames.add(outputName);
+      units.push({ outputName, kind: 'fastcopy', fastCopyFile: z.file, description: `${z.originalName} (no pattern found)` });
+    }
+
+    // Loose PDFs with no recognizable pattern — bundled together into one catch-all zip.
+    const unmatchedPdfSources = [];
+    for (const lg of looseGroups) {
+      if (lg.looseKey) continue;
+      for (const r of lg.results) {
+        if (r.entry) unmatchedPdfSources.push({ entry: r.entry, name: r.displayPath });
+      }
+    }
+    if (unmatchedPdfSources.length > 0) {
+      let outputName = 'Unmatched_PDFs.zip';
+      while (usedOutputNames.has(outputName)) outputName = outputName.replace(/\.zip$/i, '_extra.zip');
+      usedOutputNames.add(outputName);
+      units.push({
+        outputName,
+        kind: 'rebuild',
+        pdfSources: unmatchedPdfSources,
+        description: `${unmatchedPdfSources.length} loose PDF${unmatchedPdfSources.length === 1 ? '' : 's'} with no recognizable pattern`
+      });
+    }
+
+    return units;
+  }
+
+  // Builds a fresh zip (as an ArrayBuffer) from a flat list of PDF sources,
+  // deduping identical filenames with the "_extra" convention.
+  async function buildRebuiltZipBytes(pdfSources) {
+    const sub = new JSZip();
+    const usedNames = new Set();
+    for (const src of pdfSources) {
+      const name = dedupeFilename(src.name, usedNames);
+      const data = await src.entry.async('arraybuffer');
+      sub.file(name, data);
+    }
+    return sub.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  }
+
   function renderRenameList() {
     renameListEl.innerHTML = '';
 
-    if (zipRenameMap.length === 0) {
+    const plan = buildExportPlan();
+    if (plan.length === 0) {
       renameSection.classList.remove('show');
       return;
     }
 
-    // Resolve name collisions across zips up front, so what's shown matches what downloads.
-    const usedNames = new Set();
-    for (const z of zipRenameMap) {
-      if (!z.newName) continue;
-      let name = z.newName;
-      let counter = 1;
-      while (usedNames.has(name)) {
-        const dot = z.newName.lastIndexOf('.');
-        const base = dot > -1 ? z.newName.slice(0, dot) : z.newName;
-        const ext = dot > -1 ? z.newName.slice(dot) : '';
-        name = `${base} (${counter})${ext}`;
-        counter++;
-      }
-      usedNames.add(name);
-      z.finalName = name;
-    }
-
-    for (const z of zipRenameMap) {
+    for (const unit of plan) {
       const row = document.createElement('div');
       row.className = 'file-row';
-      row.dataset.search = (z.originalName + ' ' + (z.finalName || '')).toLowerCase();
+      row.dataset.search = (unit.outputName + ' ' + unit.description).toLowerCase();
 
       const nameEl = document.createElement('div');
       nameEl.className = 'file-name';
-      if (z.matched) {
-        nameEl.innerHTML = `${z.originalName} <span style="color:var(--muted)">→</span> <strong>${z.finalName}</strong>`;
+      if (unit.kind === 'rebuild') {
+        nameEl.innerHTML = `${unit.description} <span style="color:var(--muted)">→ merged →</span> <strong>${unit.outputName}</strong>`;
       } else {
-        nameEl.textContent = `${z.originalName} (no pattern found — keeping original name)`;
+        nameEl.innerHTML = `${unit.description} <span style="color:var(--muted)">→</span> <strong>${unit.outputName}</strong>`;
       }
       row.appendChild(nameEl);
 
       const dlBtn = document.createElement('button');
       dlBtn.className = 'row-download-btn';
       dlBtn.textContent = 'Download';
-      dlBtn.addEventListener('click', () => {
-        const url = URL.createObjectURL(z.file);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = z.matched ? z.finalName : z.originalName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 4000);
+      dlBtn.addEventListener('click', async () => {
+        dlBtn.disabled = true;
+        const original = dlBtn.textContent;
+        dlBtn.textContent = '…';
+        try {
+          let blobSource;
+          if (unit.kind === 'fastcopy') {
+            blobSource = unit.fastCopyFile;
+          } else {
+            const bytes = await buildRebuiltZipBytes(unit.pdfSources);
+            blobSource = new Blob([bytes], { type: 'application/zip' });
+          }
+          const url = URL.createObjectURL(blobSource);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = unit.outputName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+        } catch (err) {
+          alert('Could not build this zip: ' + err.message);
+        } finally {
+          dlBtn.disabled = false;
+          dlBtn.textContent = original;
+        }
       });
       row.appendChild(dlBtn);
 
@@ -1337,7 +1595,8 @@
   }
 
   async function downloadRenamedZips() {
-    if (zipRenameMap.length === 0) return;
+    const plan = buildExportPlan();
+    if (plan.length === 0) return;
 
     renameDownloadBtn.disabled = true;
     const originalText = renameDownloadBtnText.textContent;
@@ -1345,10 +1604,14 @@
 
     try {
       const bundle = new JSZip();
-      for (const z of zipRenameMap) {
-        const name = z.matched ? z.finalName : z.originalName;
-        const data = await z.file.arrayBuffer();
-        bundle.file(name, data);
+      for (const unit of plan) {
+        if (unit.kind === 'fastcopy') {
+          const data = await unit.fastCopyFile.arrayBuffer();
+          bundle.file(unit.outputName, data);
+        } else {
+          const bytes = await buildRebuiltZipBytes(unit.pdfSources);
+          bundle.file(unit.outputName, bytes);
+        }
       }
 
       const blob = await bundle.generateAsync({ type: 'blob', compression: 'STORE' });
@@ -1382,18 +1645,8 @@
       for (const item of allPdfItems) {
         // Use just the filename (flattened, no folder structure) so every
         // PDF from every source zip — nested or not — lands in one flat list.
-        let name = item.displayPath.split(' » ').pop().split('/').pop();
-
-        let counter = 1;
-        while (usedNames.has(name)) {
-          const dot = name.lastIndexOf('.');
-          const base = dot > -1 ? name.slice(0, dot) : name;
-          const ext = dot > -1 ? name.slice(dot) : '';
-          const candidate = `${base} (${counter})${ext}`;
-          if (!usedNames.has(candidate)) { name = candidate; break; }
-          counter++;
-        }
-        usedNames.add(name);
+        const rawName = item.displayPath.split(' » ').pop().split('/').pop();
+        const name = dedupeFilename(rawName, usedNames);
 
         const data = await item.entry.async('arraybuffer');
         bundle.file(name, data);
