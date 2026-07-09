@@ -1,0 +1,160 @@
+// ==UserScript==
+// @name         Judicial Record Weeding - Global Official Search
+// @namespace    http://tampermonkey.net/
+// @version      1.3
+// @description  Moves Official Search box to the global layout level so it is always present and never clears.
+// @author       Your Name
+// @match        http://10.145.22.11:8888/add_weeding_details.php
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    let savedSearchValue = "";
+
+    // 1. Setup the Global Input Box immediately when the page loads
+    function injectGlobalSearch() {
+        const container = document.querySelector('.container');
+        if (!container || document.getElementById('global_off_search')) return;
+
+        // Create a wrapper row to style nicely at the top
+        const searchRow = document.createElement('div');
+        searchRow.className = 'row';
+        searchRow.style.margin = '10px 0 20px 0';
+        searchRow.style.padding = '15px';
+        searchRow.style.background = '#f8f9fa';
+        searchRow.style.border = '2px dashed #22bacf';
+        searchRow.style.borderRadius = '4px';
+
+        searchRow.innerHTML = `
+            <label style="font-weight: bold; color: #333; margin-right: 10px; display: inline-block;">
+                Global Official Name Search:
+            </label>
+            <input type="text" id="global_off_search" placeholder="Type name to match dropdown..." 
+                   class="form_control" style="width: 300px; display: inline-block; padding: 4px 8px;">
+        `;
+
+        // Prepend it to the very top of the main container shell
+        container.insertBefore(searchRow, container.firstChild);
+
+        // Map live typing matching system
+        document.getElementById('global_off_search').addEventListener('input', function() {
+            savedSearchValue = this.value;
+            syncSearchToDropdown();
+        });
+    }
+
+    // Helper logic to find and match values inside the official list selection
+    function syncSearchToDropdown() {
+        const offDropdown = document.getElementById('off_name');
+        if (!offDropdown) return; // Dropdown not loaded yet via AJAX
+
+        const searchText = savedSearchValue.toLowerCase().trim();
+        if (searchText === "") {
+            offDropdown.value = "";
+            return;
+        }
+
+        const options = offDropdown.options;
+        for (let i = 0; i < options.length; i++) {
+            const optionText = options[i].text.toLowerCase();
+            if (optionText.includes(searchText)) {
+                offDropdown.value = options[i].value;
+                
+                // Fire native web app visibility rules dynamically
+                if (typeof window.show_off_name === 'function') {
+                    window.show_off_name();
+                }
+                break;
+            }
+        }
+    }
+
+    // 2. Continuous handler for dealing form components
+    function initAutoFill() {
+        const actualPagesInput = document.getElementById('actual_pages');
+        const digiPagesInput = document.getElementById('digi_pages');
+        const verifyScan = document.getElementById('verify_scan');
+        const verifyAppeal = document.getElementById('verify_appeal');
+        const verifyWeed = document.getElementById('verify_weed');
+        const locationDropdown = document.getElementById('location');
+
+        if (actualPagesInput && !actualPagesInput.dataset.hooked) {
+            actualPagesInput.dataset.hooked = "true";
+
+            // Live copy execution
+            actualPagesInput.addEventListener('input', function() {
+                if (digiPagesInput) {
+                    digiPagesInput.value = this.value;
+                }
+            });
+
+            // Automated serial clicks
+            const checkboxes = [verifyScan, verifyAppeal, verifyWeed];
+            checkboxes.forEach(box => {
+                if (box && !box.checked) {
+                    box.click(); 
+                }
+            });
+
+            // Set to CJA location format
+            if (locationDropdown) {
+                locationDropdown.value = "2";
+            }
+
+            // Instantly sync the dropdown values to match our global search text box
+            syncSearchToDropdown();
+
+            // 3. Sequential navigation workflow map
+            const globalSearchBox = document.getElementById('global_off_search');
+            const navOrder = [
+                actualPagesInput,
+                digiPagesInput,
+                verifyScan,
+                verifyAppeal,
+                verifyWeed,
+                globalSearchBox,
+                locationDropdown
+            ].filter(Boolean);
+
+            navOrder.forEach((element, index) => {
+                element.addEventListener('keydown', function(e) {
+                    let nextIndex = index;
+
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                        if (index < navOrder.length - 1) {
+                            nextIndex = index + 1;
+                            e.preventDefault();
+                        }
+                    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                        if (index > 0) {
+                            nextIndex = index - 1;
+                            e.preventDefault();
+                        }
+                    }
+
+                    if (nextIndex !== index) {
+                        navOrder[nextIndex].focus();
+                        if (navOrder[nextIndex].type === 'text') {
+                            navOrder[nextIndex].select();
+                        }
+                    }
+                });
+            });
+        }
+    }
+
+    // Monitor engine to securely lock layout elements
+    const observer = new MutationObserver(() => {
+        injectGlobalSearch();
+        if (document.getElementById('actual_pages')) {
+            initAutoFill();
+        }
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+})();
