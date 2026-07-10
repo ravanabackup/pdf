@@ -1,0 +1,82 @@
+// ==UserScript==
+// @name         Judicial Record Automation & Cyclic Title Monitor
+// @namespace    http://tampermonkey.net/
+// @version      1.7
+// @description  Automates submission and explicitly recalculates the title by triggering the Submit action every 30 seconds.
+// @author       Priyank Pardesi
+// @match        http://10.145.22.11:8888/verify_weeding_all.php*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const INITIAL_CLICK_DELAY = 1000; // First click after page load (1 second)
+    const REFRESH_CLICK_INTERVAL = 10000; // Re-click submit every 30 seconds
+    const originalTitle = document.title;
+
+    function init() {
+        // 1. Initial execution of title parser
+        updateTitleWithHighestNumber();
+        
+        // 2. Set up MutationObserver to update the title immediately when the Submit action pulls new data into the DOM
+        const targetNode = document.getElementById('output') || document.body;
+        const observer = new MutationObserver(() => {
+            updateTitleWithHighestNumber();
+        });
+        observer.observe(targetNode, { childList: true, subtree: true });
+
+        // 3. Trigger the very first automated click
+        setTimeout(() => {
+            executeSubmitClick();
+        }, INITIAL_CLICK_DELAY);
+
+        // 4. Set up the repeating loop to click the Submit button every 30 seconds
+        setInterval(() => {
+            executeSubmitClick();
+        }, REFRESH_CLICK_INTERVAL);
+    }
+
+    function updateTitleWithHighestNumber() {
+        const labels = Array.from(document.querySelectorAll('label.custom-control-label'));
+        if (labels.length === 0) return;
+
+        let highestValue = -1;
+
+        labels.forEach(el => {
+            const num = parseInt(el.textContent.trim(), 10);
+            if (!isNaN(num) && num > highestValue) {
+                highestValue = num;
+            }
+        });
+
+        if (highestValue !== -1) {
+            document.title = `[Target: ${highestValue}] ${originalTitle}`;
+        }
+    }
+
+    function executeSubmitClick() {
+        const submitBtn = document.querySelector('button[name="btn_diary"]');
+        
+        if (submitBtn) {
+            try {
+                // Fire native DOM click
+                submitBtn.click();
+            } catch (e) {
+                // Fallback direct environment function execution if native execution path is blocked
+                if (typeof unsafeWindow !== 'undefined' && typeof unsafeWindow.get_details === 'function') {
+                    unsafeWindow.get_details(4);
+                } else if (typeof window.get_details === 'function') {
+                    window.get_details(4);
+                }
+            }
+        }
+    }
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        init();
+    } else {
+        window.addEventListener('load', init);
+    }
+})();
