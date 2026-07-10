@@ -1,0 +1,543 @@
+// ==UserScript==
+// @name         Judicial Record Weeding to SCI Transfer + Auto Court/State/Bench Select (Unified)
+// @namespace    http://tampermonkey.net/
+// @version      2.3
+// @description  Bridges internal weeding-details page with SCI case-status site: auto-fills court/state/bench dropdowns, transfers case no/date, syncs captcha, click-to-refresh captcha, SPA-nav-proof reinit, and cleanly resets output on every new search
+// @match        http://10.145.22.11:8888/add_weeding_details.php*
+// @match        https://www.sci.gov.in/case-status-court/*
+// @match        https://www.sci.gov.in/case-status-court
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @run-at       document-end
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    // ============================================================
+    // SHARED HELPERS
+    // ============================================================
+    function convertDateFormat(dateStr) {
+        if (!dateStr) return "";
+        const months = {
+            "JAN": "01", "FEB": "02", "MAR": "03", "APR": "04", "MAY": "05", "JUN": "06",
+            "JUL": "07", "AUG": "08", "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12"
+        };
+        let parts = dateStr.toUpperCase().split('-');
+        if (parts.length === 3) {
+            let day = parts[0].padStart(2, '0');
+            let monthNum = months[parts[1]] || parts[1];
+            let year = parts[2];
+            return `${day}-${monthNum}-${year}`;
+        }
+        return dateStr;
+    }
+
+    function getBase64Image(img) {
+        try {
+            let canvas = document.createElement("canvas");
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            let ctx = canvas.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+            return canvas.toDataURL("image/png");
+        } catch (e) {
+            console.log('SCI Bridge: Failed to convert captcha image to Base64', e);
+            return null;
+        }
+    }
+
+    // ============================================================
+    // SITE 1: INTERNAL WEEDING DETAILS PAGE (10.145.22.11)
+    // ============================================================
+    if (window.location.href.includes("10.145.22.11")) {
+
+        // --- Build floating captcha + live-output panel ---
+        let captchaContainer = document.createElement("div");
+        captchaContainer.id = "sci-captcha-container";
+        captchaContainer.style = "position: fixed; top: 10px; right: 10px; z-index: 9999; padding: 10px; background: #fff; border: 2px solid #ffc107; border-radius: 5px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 220px; text-align: center; max-height: 90vh; overflow-y: auto;";
+        captchaContainer.innerHTML = `
+            <div style="font-weight:bold; font-size:12px; margin-bottom:5px; color:#333;">SCI Captcha <span style="font-weight:normal; color:#888;">(click image to refresh)</span></div>
+            <img id="sci-captcha-img" src="" alt="Waiting for SCI site..." title="Click to refresh captcha" style="max-width: 100%; border: 1px solid #ccc; height: 40px; background: #eee; display: block; margin: 0 auto 5px auto; cursor: pointer;"/>
+            <input type="text" id="sci-captcha-input" placeholder="Enter Captcha" style="width: 100%; padding: 4px; box-sizing: border-box; text-align: center; margin-bottom: 5px; border: 1px solid #ccc; border-radius:3px;"/>
+            <button type="button" id="sci-captcha-submit" class="btn btn-primary" style="width: 100%; font-weight: bold; padding: 5px; font-size:12px; margin-bottom: 10px;">Submit to SCI</button>
+
+            <hr style="border: 0; border-top: 1px solid #ccc; margin: 10px 0;">
+
+            <div style="font-weight:bold; font-size:11px; margin-bottom:5px; color:#555; text-align: left;">Supreme Court Output:</div>
+            <div id="sci-live-output" style="font-size: 11px; text-align: left; padding: 5px; background: #fafafa; border: 1px dashed #aaa; min-height: 40px; max-height: 300px; overflow-y: auto; color: #333;">
+                Waiting for search...
+            </div>
+        `;
+        document.body.appendChild(captchaContainer);
+
+        function resetOutputPanel(message) {
+            const img = document.querySelector("#sci-captcha-img");
+            const out = document.querySelector("#sci-live-output");
+            const input = document.querySelector("#sci-captcha-input");
+            if (img) { img.src = ""; img.alt = "Awaiting new captcha..."; }
+            if (out) out.innerHTML = message || "Waiting for search...";
+            if (input) input.value = "";
+        }
+
+        // Reflect stored captcha image / live output onto the panel
+        setInterval(() => {
+            let base64Img = GM_getValue("sci_captcha_base64");
+            let imgElement = document.querySelector("#sci-captcha-img");
+            if (imgElement) {
+                imgElement.src = base64Img ? base64Img : "";
+                if (!base64Img) imgElement.alt = "Awaiting new captcha...";
+            }
+
+            let liveOutput = GM_getValue("sci_search_results_html");
+            let outputDiv = document.querySelector("#sci-live-output");
+            if (outputDiv) {
+                outputDiv.innerHTML = liveOutput ? liveOutput : "Waiting for search...";
+            }
+        }, 500);
+
+        // Click the captcha image in the panel -> tell the SCI tab to refresh its captcha
+        document.querySelector("#sci-captcha-img").addEventListener("click", function () {
+            const imgElement = document.querySelector("#sci-captcha-img");
+            if (imgElement) imgElement.alt = "Refreshing captcha...";
+            GM_setValue("sci_captcha_base64", ""); // clear stale image immediately in the panel
+            GM_setValue("sci_refresh_captcha_token", Date.now());
+            console.log('SCI Bridge: Requested captcha refresh from SCI tab.');
+        });
+
+        // Submit captcha solution typed by the user
+        document.querySelector("#sci-captcha-submit").addEventListener("click", function () {
+            let val = document.querySelector("#sci-captcha-input").value.trim();
+            if (val) {
+                GM_setValue("sci_search_results_html", "Processing search request...");
+                GM_setValue("sci_captcha_solution", val);
+                GM_setValue("sci_trigger_submit", true);
+                document.querySelector("#sci-captcha-input").value = "";
+            } else {
+                alert("Please enter the captcha value first.");
+            }
+        });
+
+        // Watch for the native Submit button (get_details(0)) and the local #output block
+        const observer = new MutationObserver(() => {
+            let nativeSubmitBtn = document.querySelector("button[name='btn_diary']");
+            if (nativeSubmitBtn && !nativeSubmitBtn.classList.contains("patched-chain")) {
+                nativeSubmitBtn.classList.add("patched-chain");
+
+                nativeSubmitBtn.addEventListener("click", function () {
+                    console.log('SCI Bridge: Submit (get_details) clicked - resetting SCI panel for new case.');
+
+                    // ---- HARD RESET: wipe every stored key so no stale data can reappear ----
+                    GM_setValue("sci_search_results_html", "");
+                    GM_setValue("sci_captcha_base64", "");
+                    GM_setValue("sci_case_no", "");
+                    GM_setValue("sci_date", "");
+                    GM_setValue("sci_captcha_solution", "");
+                    GM_setValue("sci_trigger_submit", false);
+                    GM_setValue("sci_reset_token", Date.now()); // tells SCI tab a fresh cycle has begun
+
+                    // Reflect the reset instantly, don't wait for the 500ms poll
+                    resetOutputPanel("Fetching new local records...");
+
+                    // Give the native page time to populate #output, then forward it
+                    setTimeout(() => {
+                        let transferBtn = document.querySelector("#send-to-sci-btn");
+                        if (transferBtn) {
+                            transferBtn.click();
+                        } else {
+                            console.log('SCI Bridge: #send-to-sci-btn not found yet - #output may still be rendering.');
+                        }
+                    }, 600);
+                });
+            }
+
+            let outputDiv = document.querySelector("#output");
+            if (outputDiv && outputDiv.innerText.trim() !== "" && !document.querySelector("#send-to-sci-btn")) {
+
+                let btn = document.createElement("button");
+                btn.id = "send-to-sci-btn";
+                btn.type = "button";
+                btn.className = "btn btn-warning";
+                btn.style.marginLeft = "10px";
+                btn.style.fontWeight = "bold";
+                btn.innerText = "Send Data to Supreme Court Site";
+
+                let actionArea = document.querySelector("input[value='Clear Values']");
+                if (actionArea && actionArea.parentNode) {
+                    actionArea.parentNode.appendChild(btn);
+                } else {
+                    outputDiv.insertBefore(btn, outputDiv.firstChild);
+                }
+
+                btn.addEventListener("click", function () {
+                    let pageText = outputDiv.innerText;
+
+                    let caseIdMatch = pageText.match(/[A-Z]+[-–]\d+[-–]\d{4}/i);
+                    let caseNo = "";
+                    if (caseIdMatch) {
+                        let parts = caseIdMatch[0].split(/[-–]/);
+                        if (parts.length >= 2) caseNo = parts[1];
+                    }
+
+                    let dateMatch = pageText.match(/(\d{1,2})[-–](JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[-–](\d{4})/i);
+                    let formattedDate = dateMatch ? convertDateFormat(dateMatch[0]) : "";
+
+                    if (caseNo || formattedDate) {
+                        console.log(`SCI Bridge: Forwarding case ${caseNo}, date ${formattedDate} to SCI tab.`);
+                        GM_setValue("sci_case_no", caseNo);
+                        GM_setValue("sci_date", formattedDate);
+                        GM_setValue("sci_search_results_html", "Data sent! Awaiting dynamic Captcha solution...");
+                    } else {
+                        document.querySelector("#sci-live-output").innerHTML = "Error: Text not ready in #output node yet. Click 'Send Data' button manually.";
+                    }
+                });
+            }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // ============================================================
+    // SITE 2: SUPREME COURT OF INDIA CASE-STATUS SITE
+    // ============================================================
+    if (window.location.href.includes("sci.gov.in")) {
+
+        // ---- 2a. Auto-select Court / State / Bench dropdowns ----
+        let ddRetry = { state: 0, bench: 0 };
+        const DD_MAX_RETRIES = 20;
+
+        function startDropdownSequence() {
+            ddRetry = { state: 0, bench: 0 };
+            setTimeout(selectCourtDropdown, 2000);
+        }
+
+        // Guard against the case where document 'load' already fired before this
+        // script attached (can happen on slow-loading SPA pages or when the tab
+        // was already open and just re-focused).
+        if (document.readyState === 'complete') {
+            startDropdownSequence();
+        } else {
+            window.addEventListener('load', startDropdownSequence);
+        }
+
+        function selectCourtDropdown() {
+            console.log('SCI Script: Looking for dropdowns...');
+            const dropdowns = document.querySelectorAll('select');
+            if (dropdowns.length >= 1) {
+                const courtSelect = dropdowns[0];
+                console.log('SCI Script: Found Court dropdown. Selecting "High Court"...');
+                if (forceSelection(courtSelect, 'High Court')) {
+                    setTimeout(selectStateDropdown, 1500);
+                }
+            } else {
+                console.log('SCI Script: No dropdown elements found yet. Retrying...');
+                setTimeout(selectCourtDropdown, 1000);
+            }
+        }
+
+        function selectStateDropdown() {
+            const dropdowns = document.querySelectorAll('select');
+            if (dropdowns.length >= 2) {
+                const stateSelect = dropdowns[1];
+                if (stateSelect.options.length > 1) {
+                    console.log('SCI Script: Found State dropdown. Selecting "Punjab"...');
+                    if (forceSelection(stateSelect, 'Punjab')) {
+                        setTimeout(selectBenchDropdown, 1500);
+                    }
+                } else if (ddRetry.state < DD_MAX_RETRIES) {
+                    ddRetry.state++;
+                    console.log(`SCI Script: Waiting for State server data... (${ddRetry.state})`);
+                    setTimeout(selectStateDropdown, 500);
+                }
+            }
+        }
+
+        function selectBenchDropdown() {
+            const dropdowns = document.querySelectorAll('select');
+            const targetBench = 'High Court of Punjab & Haryana at Chandigarh HCPB';
+            if (dropdowns.length >= 3) {
+                const benchSelect = dropdowns[2];
+                if (benchSelect.options.length > 1) {
+                    console.log(`SCI Script: Found Bench dropdown. Selecting "${targetBench}"...`);
+                    if (forceSelection(benchSelect, targetBench)) {
+                        console.log('SCI Script: Dropdown automation complete!');
+                    }
+                } else if (ddRetry.bench < DD_MAX_RETRIES) {
+                    ddRetry.bench++;
+                    console.log(`SCI Script: Waiting for Bench server data... (${ddRetry.bench})`);
+                    setTimeout(selectBenchDropdown, 500);
+                }
+            }
+        }
+
+        function forceSelection(selectElement, textToMatch) {
+            let matchedIndex = -1;
+            const target = textToMatch.trim().toLowerCase();
+            for (let i = 0; i < selectElement.options.length; i++) {
+                if (selectElement.options[i].text.trim().toLowerCase() === target) {
+                    matchedIndex = i;
+                    break;
+                }
+            }
+            if (matchedIndex === -1) {
+                console.log(`SCI Script: Option text "${textToMatch}" not available in this dropdown.`);
+                return false;
+            }
+            selectElement.selectedIndex = matchedIndex;
+            selectElement.value = selectElement.options[matchedIndex].value;
+            selectElement.dispatchEvent(new Event('change', { bubbles: true }));
+            selectElement.dispatchEvent(new Event('input', { bubbles: true }));
+            if (typeof selectElement.onchange === 'function') selectElement.onchange();
+            if (typeof jQuery !== 'undefined') {
+                try { jQuery(selectElement).val(selectElement.value).trigger('change'); } catch (e) {}
+            }
+            return true;
+        }
+
+        // ---- 2b. Captcha image capture (only pushes when it actually changes) ----
+        let lastCaptchaBase64 = null;
+        let captchaNotFoundLogged = false;
+
+        function findCaptchaImg() {
+            return document.querySelector("img[src*='_siwp_captcha']")
+                || document.querySelector("img[id*='captcha']")
+                || document.querySelector("img[class*='captcha']")
+                || document.querySelector("img[src*='captcha']");
+        }
+
+        function captureCaptchaIfReady() {
+            let captchaImgNode = findCaptchaImg();
+
+            if (!captchaImgNode) {
+                if (!captchaNotFoundLogged) {
+                    console.log('SCI Script: No captcha <img> found on page yet.');
+                    captchaNotFoundLogged = true;
+                }
+                return;
+            }
+            captchaNotFoundLogged = false;
+
+            if (!captchaImgNode.complete || captchaImgNode.naturalWidth === 0) {
+                console.log('SCI Script: Captcha img found but not fully loaded. Will retry.');
+                return;
+            }
+
+            let base64Str;
+            if (captchaImgNode.src && captchaImgNode.src.startsWith('data:')) {
+                base64Str = captchaImgNode.src;
+            } else {
+                base64Str = getBase64Image(captchaImgNode);
+            }
+
+            if (base64Str && base64Str !== lastCaptchaBase64) {
+                lastCaptchaBase64 = base64Str;
+                GM_setValue("sci_captcha_base64", base64Str);
+                console.log(`SCI Script: Captcha image captured and pushed (${base64Str.length} chars).`);
+            }
+        }
+
+        // Poll on an interval (covers cases where the img just sits there unchanged)
+        setInterval(captureCaptchaIfReady, 500);
+
+        // Also react immediately to DOM changes (covers SPA re-renders that swap in
+        // a brand-new <img> node or change its src, which the interval alone can be
+        // slow to notice right after a route change).
+        const captchaDomObserver = new MutationObserver(() => captureCaptchaIfReady());
+        captchaDomObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['src']
+        });
+
+        // Try an immediate capture attempt right away too, in case the image is
+        // already present and loaded by the time this script runs.
+        captureCaptchaIfReady();
+
+        // ---- 2c. Results push: MutationObserver-based ----
+        let lastPushedHTML = null;
+
+        function pushResultsIfChanged() {
+            let resultsHolder = document.querySelector(".resultsHolder.servicesResultsContainer");
+            if (!resultsHolder) return;
+            let clonedResults = resultsHolder.cloneNode(true);
+            let loader = clonedResults.querySelector(".service-loader");
+            if (loader) loader.remove();
+            let htmlContent = clonedResults.innerHTML.trim();
+            if (htmlContent && htmlContent !== lastPushedHTML) {
+                lastPushedHTML = htmlContent;
+                GM_setValue("sci_search_results_html", htmlContent);
+                console.log('SCI Script: New results detected, pushed to weeding page panel.');
+            }
+        }
+
+        function attachResultsObserver() {
+            let target = document.querySelector(".resultsHolder.servicesResultsContainer");
+            if (!target) return false;
+            const resultsObserver = new MutationObserver(() => pushResultsIfChanged());
+            resultsObserver.observe(target, { childList: true, subtree: true, characterData: true });
+            pushResultsIfChanged();
+            console.log('SCI Script: Results observer attached.');
+            return true;
+        }
+
+        if (!attachResultsObserver()) {
+            let findRetries = 0;
+            const findInterval = setInterval(() => {
+                if (attachResultsObserver() || ++findRetries > 40) {
+                    clearInterval(findInterval);
+                }
+            }, 500);
+        }
+
+        // ---- 2d. Reset token watcher ----
+        let lastResetToken = GM_getValue("sci_reset_token");
+        setInterval(() => {
+            let token = GM_getValue("sci_reset_token");
+            if (token && token !== lastResetToken) {
+                lastResetToken = token;
+                lastPushedHTML = null;
+                lastCaptchaBase64 = null; // clears the local memory link to allow a clean captcha resync
+                console.log('SCI Script: Reset token changed - cleared cached results and captcha memory.');
+            }
+        }, 500);
+
+        // ---- 2e. Captcha refresh-on-click watcher ----
+        function refreshCaptchaImage() {
+            let captchaImgNode = findCaptchaImg();
+            if (!captchaImgNode) {
+                console.log('SCI Script: Refresh requested but no captcha <img> found.');
+                return;
+            }
+
+            let refreshed = false;
+
+            // Many captcha widgets (incl. SI CAPTCHA) bind a reload-on-click handler
+            // directly on the image element itself.
+            try {
+                captchaImgNode.click();
+                refreshed = true;
+            } catch (e) {}
+
+            // Some implementations wrap the image in an <a> that handles the reload.
+            let anchorParent = captchaImgNode.closest('a');
+            if (anchorParent) {
+                try { anchorParent.click(); refreshed = true; } catch (e) {}
+            }
+
+            // Some implementations use a separate refresh/reload icon near the image.
+            let refreshBtn = document.querySelector(
+                "[id*='captcha' i][id*='refresh' i], [id*='captcha' i][id*='reload' i], " +
+                "[class*='captcha' i][class*='refresh' i], [class*='captcha' i][class*='reload' i], " +
+                "a[title*='refresh' i], a[title*='reload' i]"
+            );
+            if (refreshBtn) {
+                try { refreshBtn.click(); refreshed = true; } catch (e) {}
+            }
+
+            // Fallback: cache-bust the src directly so the browser re-requests a new image.
+            if (captchaImgNode.src && !captchaImgNode.src.startsWith('data:')) {
+                try {
+                    let url = new URL(captchaImgNode.src, window.location.href);
+                    url.searchParams.set('_r', Date.now());
+                    captchaImgNode.src = url.toString();
+                    refreshed = true;
+                } catch (e) {}
+            }
+
+            console.log(`SCI Script: Captcha refresh triggered (attempted: ${refreshed}).`);
+        }
+
+        let lastRefreshToken = GM_getValue("sci_refresh_captcha_token");
+        setInterval(() => {
+            let token = GM_getValue("sci_refresh_captcha_token");
+            if (token && token !== lastRefreshToken) {
+                lastRefreshToken = token;
+                lastCaptchaBase64 = null; // ensure the new image gets pushed once it loads
+                refreshCaptchaImage();
+                // Give the new image a moment to load, then try to capture it
+                setTimeout(captureCaptchaIfReady, 800);
+                setTimeout(captureCaptchaIfReady, 1600);
+            }
+        }, 500);
+
+        // ---- 2f. Fill case_no / date / captcha / trigger search ----
+        setInterval(function () {
+            let storedCaseNo = GM_getValue("sci_case_no");
+            if (storedCaseNo) {
+                let targetInput = document.querySelector("#case_no");
+                if (targetInput) {
+                    targetInput.value = storedCaseNo;
+                    targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    GM_setValue("sci_case_no", "");
+                }
+            }
+
+            let storedDate = GM_getValue("sci_date");
+            if (storedDate) {
+                let targetDateInput = document.querySelector("#listing_date");
+                if (targetDateInput) {
+                    targetDateInput.value = storedDate;
+                    targetDateInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    targetDateInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    GM_setValue("sci_date", "");
+                }
+            }
+
+            let solvedCaptcha = GM_getValue("sci_captcha_solution");
+            if (solvedCaptcha) {
+                let captchaInputBox = document.querySelector("#siwp_captcha_value_0");
+                if (captchaInputBox) {
+                    captchaInputBox.value = solvedCaptcha;
+                    captchaInputBox.dispatchEvent(new Event('input', { bubbles: true }));
+                    captchaInputBox.dispatchEvent(new Event('change', { bubbles: true }));
+                    GM_setValue("sci_captcha_solution", "");
+                }
+            }
+
+            let triggerSubmit = GM_getValue("sci_trigger_submit");
+            if (triggerSubmit === true) {
+                let searchBtn = document.querySelector("input[name='submit'][value='Search']");
+                if (searchBtn) {
+                    GM_setValue("sci_trigger_submit", false);
+                    searchBtn.click();
+                }
+            }
+        }, 500);
+
+        // ---- 2g. SPA-navigation guard ----
+        // If the SCI site is (or becomes) a client-routed page, a "soft" navigation
+        // via pushState/replaceState won't trigger a fresh userscript injection.
+        // Watching history changes lets us re-arm the dropdown sequence and force a
+        // captcha re-check whenever the URL changes without a full page reload.
+        (function watchSpaNavigation() {
+            let lastUrl = window.location.href;
+
+            function onUrlChange() {
+                if (window.location.href === lastUrl) return;
+                lastUrl = window.location.href;
+                if (window.location.href.includes("case-status-court")) {
+                    console.log('SCI Script: Detected in-page navigation - re-arming dropdowns and captcha capture.');
+                    lastCaptchaBase64 = null;
+                    startDropdownSequence();
+                    setTimeout(captureCaptchaIfReady, 500);
+                    setTimeout(captureCaptchaIfReady, 1500);
+                }
+            }
+
+            const originalPushState = history.pushState;
+            const originalReplaceState = history.replaceState;
+
+            history.pushState = function (...args) {
+                originalPushState.apply(this, args);
+                onUrlChange();
+            };
+            history.replaceState = function (...args) {
+                originalReplaceState.apply(this, args);
+                onUrlChange();
+            };
+            window.addEventListener('popstate', onUrlChange);
+        })();
+    }
+})();
