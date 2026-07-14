@@ -1,0 +1,384 @@
+// ==UserScript==
+// @name         OmniDocs Auto Downloader (Show & Go)
+// @namespace    http://tampermonkey.net/
+// @version      1.2
+// @description  Auto download files from OmniDocs search results with top-center UI and precise 3-dots matching.
+// @author       You
+// @match        http://10.145.22.12:8080/omnidocs/*
+// @match        */omnidocs/*
+// @grant        none
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Configuration
+    const CONFIG = {
+        delayBetweenActions: 2000,  // Wait time between actions (ms)
+        delayAfterDownload: 3000,   // Wait time after clicking download (ms)
+        debug: true
+    };
+
+    let isRunning = false;
+    let totalDownloaded = 0;
+
+    function log(msg) {
+        if (CONFIG.debug) {
+            console.log('[OmniDocs Downloader]', msg);
+        }
+        showToast(msg);
+    }
+
+    // Helper function to wait
+    function wait(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Show-and-go non-blocking UI notification
+    function showToast(text, duration = 3000) {
+        let toast = document.getElementById('omnidocs-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'omnidocs-toast';
+            toast.style.cssText = `
+                position: fixed;
+                top: 80px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 10000;
+                background: rgba(0, 0, 0, 0.85);
+                color: #fff;
+                padding: 12px 24px;
+                border-radius: 30px;
+                font-family: Arial, sans-serif;
+                font-size: 14px;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                transition: opacity 0.3s ease;
+                pointer-events: none;
+            `;
+            document.body.appendChild(toast);
+        }
+        toast.innerText = text;
+        toast.style.opacity = '1';
+
+        // Auto fade out if not interrupted
+        clearTimeout(toast.timeoutId);
+        toast.timeoutId = setTimeout(() => {
+            toast.style.opacity = '0';
+        }, duration);
+    }
+
+    // Find checkbox by aria-label or text content
+    function findSelectAllCheckbox() {
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+        for (let cb of checkboxes) {
+            const label = cb.getAttribute('aria-label') || cb.textContent;
+            if (label && label.toLowerCase().includes('select all')) {
+                return cb;
+            }
+        }
+        const headerCheckbox = document.querySelector('table thead input[type="checkbox"]');
+        if (headerCheckbox) return headerCheckbox;
+
+        for (let cb of checkboxes) {
+            const cell = cb.closest('td, th');
+            if (cell && cell.textContent.toLowerCase().includes('select all')) {
+                return cb;
+            }
+        }
+        return null;
+    }
+
+    // Find Download button
+    function findDownloadButton() {
+        const buttons = document.querySelectorAll('button');
+        for (let btn of buttons) {
+            if (btn.textContent.toLowerCase().includes('download') ||
+                btn.innerHTML.toLowerCase().includes('download')) {
+                return btn;
+            }
+        }
+        for (let btn of buttons) {
+            const ariaLabel = btn.getAttribute('aria-label');
+            if (ariaLabel && ariaLabel.toLowerCase().includes('download')) {
+                return btn;
+            }
+        }
+        return null;
+    }
+
+    // Find "Remove selection" or uncheck all button
+    function findRemoveSelectionButton() {
+        const images = document.querySelectorAll('img[alt*="Remove selection"], img[title*="Remove selection"]');
+        if (images.length > 0) {
+            return images[0].closest('button') || images[0].parentElement;
+        }
+        const buttons = document.querySelectorAll('button, div[role="button"]');
+        for (let btn of buttons) {
+            if (btn.textContent.toLowerCase().includes('remove selection') ||
+                btn.innerHTML.toLowerCase().includes('remove selection')) {
+                return btn;
+            }
+        }
+        return null;
+    }
+
+    // Find Next Batch button
+    function findNextBatchButton() {
+        const buttons = document.querySelectorAll('button');
+        for (let btn of buttons) {
+            const ariaLabel = btn.getAttribute('aria-label') || '';
+            const title = btn.getAttribute('title') || '';
+            if (ariaLabel.toLowerCase().includes('next batch') ||
+                title.toLowerCase().includes('next batch') ||
+                btn.textContent.toLowerCase().includes('next')) {
+                if (!btn.disabled) return btn;
+            }
+        }
+        const images = document.querySelectorAll('img[alt*="Next Batch"]');
+        if (images.length > 0) {
+            const btn = images[0].closest('button');
+            if (btn && !btn.disabled) return btn;
+        }
+        return null;
+    }
+
+    // Find Previous Batch button
+    function findPreviousBatchButton() {
+        const buttons = document.querySelectorAll('button');
+        for (let btn of buttons) {
+            const ariaLabel = btn.getAttribute('aria-label') || '';
+            if (ariaLabel.toLowerCase().includes('previous batch')) {
+                return btn;
+            }
+        }
+        return null;
+    }
+
+    // Get count of total checkboxes in the body/table to verify layout state
+    function getCheckboxCount() {
+        return document.querySelectorAll('input[type="checkbox"]').length;
+    }
+
+    // Get count of selected items
+    function getSelectedCount() {
+        const selectedText = document.body.innerText.match(/(\d+)\s*Items?\s*Selected/i);
+        if (selectedText) {
+            return parseInt(selectedText[1]);
+        }
+        const checkboxes = document.querySelectorAll('table tbody input[type="checkbox"]:checked');
+        return checkboxes.length;
+    }
+
+    // Get total rows on current page
+    function getItemsCount() {
+        const rows = document.querySelectorAll('table tbody tr');
+        return rows.length;
+    }
+
+    // Check if we're on the first page
+    function isFirstPage() {
+        const prevBtn = findPreviousBatchButton();
+        return !prevBtn || prevBtn.disabled;
+    }
+
+    // Go to first page
+    async function goToFirstPage() {
+        while (!isFirstPage()) {
+            const prevBtn = findPreviousBatchButton();
+            if (prevBtn && !prevBtn.disabled) {
+                prevBtn.click();
+                log('Going to previous page...');
+                await wait(CONFIG.delayBetweenActions);
+            } else {
+                break;
+            }
+        }
+        log('Now on first page');
+    }
+
+    // Target single file processing using your precise HTML elements layout
+    async function handleSingleFileDownload() {
+        // Find anchor dropdown trigger by its explicit title or matching dynamic IDs
+        const moreActionsBtn = document.querySelector('a[title="More Actions"]') || 
+                               document.querySelector('a[id^="moreActionsdropdownLabel_List_Document_"]');
+        
+        if (moreActionsBtn) {
+            moreActionsBtn.click();
+            log('Opening single file context menu via HTML target...');
+            await wait(800); // Wait briefly for Angular overlay menu container to map on DOM
+
+            // Query menu option elements targeting the specific inner structure provided
+            const options = document.querySelectorAll('div.action-text, [id^="list-view-Download-"]');
+            for (let opt of options) {
+                if (opt.textContent.trim().toLowerCase() === 'download') {
+                    opt.click();
+                    log('Selected precise Download row element.');
+                    totalDownloaded += 1;
+                    await wait(CONFIG.delayAfterDownload);
+                    return 1;
+                }
+            }
+        }
+        return 0;
+    }
+
+    // Main download function
+    async function downloadCurrentPage() {
+        const itemsCount = getItemsCount();
+        const totalCheckboxes = getCheckboxCount();
+        
+        log(`Page Status -> Rows: ${itemsCount}, Total Checkboxes: ${totalCheckboxes}`);
+
+        // If page contains only 1 row or exactly 2 total checkboxes (Header + 1 Item Row)
+        if (itemsCount === 1 || totalCheckboxes <= 2) {
+            const done = await handleSingleFileDownload();
+            if (done > 0) return 1;
+        }
+
+        const selectAllCheckbox = findSelectAllCheckbox();
+        if (!selectAllCheckbox) {
+            log('No "Select All" checkbox found on this page');
+            return 0;
+        }
+
+        // Check if already selected
+        if (!selectAllCheckbox.checked) {
+            selectAllCheckbox.click();
+            log('Selected all items on current page');
+            await wait(CONFIG.delayBetweenActions);
+        }
+
+        const selectedCount = getSelectedCount();
+        log(`Selected ${selectedCount} items`);
+
+        if (selectedCount === 0) {
+            log('No items to download on this page');
+            return 0;
+        }
+
+        // Click download
+        const downloadBtn = findDownloadButton();
+        if (downloadBtn) {
+            downloadBtn.click();
+            log('Clicked Global Download button');
+            totalDownloaded += selectedCount;
+            await wait(CONFIG.delayAfterDownload);
+        } else {
+            log('Global Download button unreachable! Falling back to dropdown item elements.');
+            return await handleSingleFileDownload();
+        }
+
+        // Uncheck all
+        const removeBtn = findRemoveSelectionButton();
+        if (removeBtn) {
+            removeBtn.click();
+            log('Unchecked all items');
+            await wait(CONFIG.delayBetweenActions);
+        } else {
+            if (selectAllCheckbox.checked) {
+                selectAllCheckbox.click();
+                log('Unchecked all via Select All');
+                await wait(CONFIG.delayBetweenActions);
+            }
+        }
+
+        return selectedCount;
+    }
+
+    // Go to next page
+    async function goToNextPage() {
+        const nextBtn = findNextBatchButton();
+        if (nextBtn) {
+            nextBtn.click();
+            log('Going to next page...');
+            await wait(CONFIG.delayBetweenActions * 2); // Wait extra for layout tracking
+            return true;
+        }
+        log('No next page available');
+        return false;
+    }
+
+    // Main process loop
+    async function startDownloadProcess() {
+        if (isRunning) {
+            log('Script is already running!');
+            return;
+        }
+
+        isRunning = true;
+        totalDownloaded = 0;
+        log('=== Starting Auto Download ===');
+
+        try {
+            await goToFirstPage();
+
+            let pageNum = 1;
+            while (true) {
+                log(`--- Processing Page ${pageNum} ---`);
+
+                const downloaded = await downloadCurrentPage();
+                log(`Downloaded ${downloaded} files from page ${pageNum}`);
+
+                const hasNext = await goToNextPage();
+                if (!hasNext) {
+                    log('Reached final page target.');
+                    break;
+                }
+
+                pageNum++;
+            }
+
+            log(`🎉 Download Complete! Total: ${totalDownloaded} files`);
+
+        } catch (error) {
+            log('Error encounter: ' + error.message);
+            console.error(error);
+        } finally {
+            isRunning = false;
+        }
+    }
+
+    // Add floating control button to TOP CENTER
+    function addControlButton() {
+        const btn = document.createElement('button');
+        btn.innerHTML = '📥 Auto Download All';
+        btn.style.cssText = `
+            position: fixed;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 15px;
+            font-weight: bold;
+            font-family: Arial, sans-serif;
+            cursor: pointer;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            transition: background 0.2s;
+        `;
+        btn.onmouseover = () => btn.style.background = '#45a049';
+        btn.onmouseout = () => btn.style.background = '#4CAF50';
+        btn.onclick = startDownloadProcess;
+        document.body.appendChild(btn);
+    }
+
+    // Initialize
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', addControlButton);
+    } else {
+        addControlButton();
+    }
+
+    // Optional Hotkey engine fallback shortcut (Alt + D)
+    document.addEventListener('keydown', (e) => {
+        if (e.altKey && e.key === 'd') {
+            startDownloadProcess();
+        }
+    });
+
+})();
