@@ -1,0 +1,84 @@
+// ==UserScript==
+// @name         Case Details Mirror & Search
+// @namespace    http://tampermonkey.net/
+// @version      1.0
+// @description  Mirrors case number and year from one app to Omnidocs and triggers search
+// @author       Your Name
+// @match        http://10.145.22.11:8888/add_weeding_details.php*
+// @match        http://10.145.22.12:8080/omnidocs/dist/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const ORIGIN_URL = 'http://10.145.22.11:8888/add_weeding_details.php';
+    const TARGET_URL = 'http://10.145.22.12:8080/omnidocs/dist/#/webApi/main/search/ISHiCoSearch';
+
+    // --- SOURCE PAGE LOGIC ---
+    if (window.location.href.includes('add_weeding_details.php')) {
+        window.addEventListener('load', () => {
+            const submitBtn = document.querySelector('button[name="btn_diary"]');
+            if (!submitBtn) return;
+
+            submitBtn.addEventListener('click', () => {
+                const caseNo = document.getElementById('t_case_no')?.value || '';
+                const caseYear = document.getElementById('t_case_year')?.value || '';
+
+                if (caseNo || caseYear) {
+                    // Store values in Tampermonkey storage across tabs/windows
+                    GM_setValue('mirror_case_no', caseNo);
+                    GM_setValue('mirror_case_year', caseYear);
+                    GM_setValue('trigger_search', true);
+
+                    // Optional: Automatically open or focus the target tab if it's not open
+                    // window.open(TARGET_URL, '_blank');
+                }
+            });
+        });
+    }
+
+    // --- TARGET PAGE LOGIC (Omnidocs Angular App) ---
+    if (window.location.href.includes('/omnidocs/dist/')) {
+        
+        // Helper to safely set Angular inputs and trick its change detection
+        const setAngularInput = (element, value) => {
+            if (!element) return false;
+            element.value = value;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('blur', { bubbles: true }));
+            return true;
+        };
+
+        // Periodically look for elements since Angular renders components dynamically
+        const checkInterval = setInterval(() => {
+            const shouldSearch = GM_getValue('trigger_search', false);
+            if (!shouldSearch) return;
+
+            const inputNo = document.getElementById('search-form-form-180-2');
+            const inputYear = document.getElementById('search-form-form-178-3');
+            const searchBtn = document.getElementById('search-form-form-443');
+
+            // Ensure all target elements exist on screen before running
+            if (inputNo && inputYear && searchBtn) {
+                clearInterval(checkInterval); // Stop looking
+
+                const caseNo = GM_getValue('mirror_case_no', '');
+                const caseYear = GM_getValue('mirror_case_year', '');
+
+                // Fill values and trigger Angular events
+                setAngularInput(inputNo, caseNo);
+                setAngularInput(inputYear, caseYear);
+
+                // Clear flags so it doesn't loop search forever
+                GM_setValue('trigger_search', false);
+
+                // Small delay to ensure Angular updates its internal state model before click
+                setTimeout(() => {
+                    searchBtn.click();
+                }, 300);
+            }
+        }, 1000); // Checks every 1 second
+    }
+})();
