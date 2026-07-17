@@ -1,0 +1,97 @@
+// ==UserScript==
+// @name         Targeted Remote Script Runner (Exact Matches)
+// @namespace    https://www.narendramodi.in/
+// @version      1.4
+// @description  Fetches and runs specific remote JavaScript code based on strict match criteria.
+// @author       Narendra Modi
+// @match        http://10.145.22.11:8888/add_weeding_details.php*
+// @match        https://www.sci.gov.in/case-status-court/*
+// @match        https://www.sci.gov.in/case-status-court
+// @match        http://10.145.22.11:8888/add_weeding_details.php
+// @match        http://10.145.22.12:8080/omnidocs/*
+// @match        */omnidocs/*
+// @match        http://10.145.22.11:8888/verify_weeding_all.php*
+// @grant        GM_xmlhttpRequest
+// @connect      *
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const scripts = [
+        {
+            name: "combinefixed",
+            encodedUrl: "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3JhdmFuYWJhY2t1cC9wZGYvcmVmcy9oZWFkcy9tYWluL2NvbWJpbmVmaXhlZC50eHQ=",
+            matches: [
+                /^http:\/\/10\.145\.22\.11:8888\/add_weeding_details\.php.*/,
+                /^https:\/\/www\.sci\.gov\.in\/case-status-court\/.*/,
+                /^https:\/\/www\.sci\.gov\.in\/case-status-court$/
+            ]
+        },
+        {
+            name: "globalsearch",
+            encodedUrl: "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3JhdmFuYWJhY2t1cC9wZGYvcmVmcy9oZWFkcy9tYWluL2dsb2JhbHNlYXJjaC50eHQ=",
+            matches: [
+                /^http:\/\/10\.145\.22\.11:8888\/add_weeding_details\.php$/
+            ]
+        },
+        {
+            name: "omnidoc",
+            encodedUrl: "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3JhdmFuYWJhY2t1cC9wZGYvcmVmcy9oZWFkcy9tYWluL29tbmlkb2MudHh0",
+            matches: [
+                /^http:\/\/10\.145\.22\.12:8080\/omnidocs\/.*/,
+                /.*\/omnidocs\/.*/
+            ]
+        },
+        {
+            name: "title",
+            encodedUrl: "aHR0cHM6Ly9yYXcuZ2l0aHVidXNlcmNvbnRlbnQuY29tL3JhdmFuYWJhY2t1cC9wZGYvcmVmcy9oZWFkcy9tYWluL3RpdGxlLnR4dA==",
+            matches: [
+                /^http:\/\/10\.145\.22\.11:8888\/verify_weeding_all\.php.*/
+            ]
+        }
+    ];
+
+    const decodeUrl = (base64Str) => atob(base64Str);
+
+    function fetchAndRunScript(name, base64Url) {
+        const url = decodeUrl(base64Url);
+        
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: url,
+            headers: {
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache"
+            },
+            onload: function(response) {
+                if (response.status === 200) {
+                    console.log(`%c[Script Runner] Executing script: ${name}`, "color: cyan; font-weight: bold;");
+                    try {
+                        const runCode = new Function(response.responseText);
+                        runCode();
+                    } catch (e) {
+                        console.error(`[Script Runner] Runtime error in script ${name}:`, e);
+                    }
+                } else {
+                    console.error(`[Script Runner] Failed to download ${name}. Status: ${response.status}`);
+                }
+            },
+            onerror: function(error) {
+                console.error(`[Script Runner] Network Error for ${name}:`, error);
+            }
+        });
+    }
+
+    const currentUrl = window.location.href;
+    
+    // Check current URL against the configured arrays
+    scripts.forEach(script => {
+        const matchesCondition = script.matches.some(regex => regex.test(currentUrl));
+        if (matchesCondition) {
+            console.log(`[Script Runner] Target matched! Loading ${script.name}.`);
+            fetchAndRunScript(script.name, script.encodedUrl);
+        }
+    });
+
+})();
