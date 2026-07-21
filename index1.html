@@ -1,0 +1,1769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZIP → PDF Page Counter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --bg: #0b0d12;
+    --panel: rgba(255,255,255,0.06);
+    --panel-border: rgba(255,255,255,0.12);
+    --accent: #6ea8fe;
+    --accent2: #8b7bff;
+    --text: #eef1f7;
+    --muted: #9aa3b2;
+    --good: #4ade80;
+    --bad: #f87171;
+    --radius: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(1200px 600px at 20% -10%, rgba(110,168,254,0.15), transparent),
+                radial-gradient(1000px 500px at 100% 10%, rgba(139,123,255,0.12), transparent),
+                var(--bg);
+    color: var(--text);
+    padding: 18px 28px 40px;
+  }
+  .app {
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  .header-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  h1 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 12px;
+    margin: 0;
+    flex: 1;
+    min-width: 240px;
+  }
+  .dropzone {
+    position: relative;
+    border-radius: 14px;
+    border: 1.5px dashed var(--panel-border);
+    background: var(--panel);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 16px 20px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .2s ease, background .2s ease, transform .15s ease;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .dropzone:hover { border-color: rgba(110,168,254,0.5); }
+  .dropzone.dragover {
+    border-color: var(--accent);
+    background: rgba(110,168,254,0.10);
+    transform: scale(1.003);
+  }
+  .dropzone svg { width: 28px; height: 28px; opacity: .85; flex-shrink: 0; }
+  .dz-text { flex: 1; min-width: 0; }
+  .dz-title { font-size: 14px; font-weight: 600; margin-bottom: 1px; }
+  .dz-sub { font-size: 12px; color: var(--muted); }
+  input[type=file] { display: none; }
+
+  .top-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  .folder-import-btn, .scan-export-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+    white-space: nowrap;
+  }
+  .folder-import-btn:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: rgba(110,168,254,0.06);
+  }
+  .scan-export-btn {
+    flex: 1;
+    min-width: 240px;
+    border: 1px solid rgba(110,168,254,0.4);
+    background: linear-gradient(135deg, rgba(110,168,254,0.16), rgba(139,123,255,0.12));
+    color: var(--text);
+    font-weight: 600;
+  }
+  .scan-export-btn:hover {
+    border-color: var(--accent);
+  }
+
+  .search-bar {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+  }
+  .search-bar.show { display: flex; }
+  .search-bar svg { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
+  .search-bar input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 13.5px;
+    outline: none;
+  }
+  .search-bar input::placeholder { color: var(--muted); }
+  .search-clear {
+    display: none;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 2px 4px;
+  }
+  .search-clear.show { display: block; }
+  .search-clear:hover { color: var(--text); }
+
+  .status {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-top: 18px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    font-size: 14px;
+    color: var(--muted);
+  }
+  .status.show { display: flex; }
+  .spinner {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2);
+    border-top-color: var(--accent);
+    animation: spin .8s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .results {
+    display: none;
+    margin-top: 22px;
+    border-radius: var(--radius);
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    overflow: hidden;
+  }
+  .results.show { display: block; }
+
+  .rename-section {
+    display: none;
+    margin-top: 18px;
+    border-radius: var(--radius);
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    overflow: hidden;
+  }
+  .rename-section.show { display: block; }
+  .rename-header {
+    padding: 18px 22px 14px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .rename-title { font-size: 15px; font-weight: 600; }
+  .rename-sub { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+  .row-download-btn {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .row-download-btn:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+
+  .summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 20px 22px;
+    background: linear-gradient(135deg, rgba(110,168,254,0.15), rgba(139,123,255,0.10));
+    border-bottom: 1px solid var(--panel-border);
+  }
+  .summary .big { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+  .summary .lbl { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+  .summary .stat { text-align: left; }
+  .summary .divider { width: 1px; align-self: stretch; background: var(--panel-border); margin: 0 20px; }
+  .overall-stats {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .folder-search-bar {
+    display: none;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px 22px;
+    border-bottom: 1px solid var(--panel-border);
+    background: rgba(255,255,255,0.015);
+  }
+  .folder-search-bar.show { display: flex; }
+  .folder-search-bar textarea {
+    flex: 1;
+    resize: vertical;
+    min-height: 34px;
+    max-height: 90px;
+    border-radius: 10px;
+    border: 1px solid var(--panel-border);
+    background: rgba(255,255,255,0.03);
+    color: var(--text);
+    font-size: 12.5px;
+    font-family: inherit;
+    padding: 8px 10px;
+    outline: none;
+  }
+  .folder-search-bar textarea:focus { border-color: var(--accent); }
+  .folder-search-bar textarea::placeholder { color: var(--muted); }
+  .folder-search-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(110,168,254,0.4);
+    background: linear-gradient(135deg, rgba(110,168,254,0.18), rgba(139,123,255,0.14));
+    color: var(--text);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .folder-search-btn:hover { border-color: var(--accent); }
+
+  .folder-tabs {
+    display: none;
+    gap: 8px;
+    padding: 12px 22px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--panel-border);
+    background: rgba(255,255,255,0.02);
+  }
+  .folder-tabs.show { display: flex; }
+  .folder-tab {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+    white-space: nowrap;
+  }
+  .folder-tab:hover {
+    color: var(--text);
+    border-color: rgba(110,168,254,0.4);
+  }
+  .folder-tab.active {
+    color: var(--text);
+    border-color: var(--accent);
+    background: rgba(110,168,254,0.15);
+    font-weight: 600;
+  }
+  .folder-tab .count-badge {
+    font-size: 11px;
+    color: var(--muted);
+    background: rgba(255,255,255,0.08);
+    padding: 1px 6px;
+    border-radius: 999px;
+  }
+  .folder-tab.active .count-badge {
+    color: var(--accent);
+  }
+
+  .sort-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 12px 22px;
+    border-bottom: 1px solid var(--panel-border);
+    background: rgba(255,255,255,0.02);
+  }
+  .sort-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-right: 2px;
+  }
+  .sort-btn {
+    padding: 7px 13px;
+    border-radius: 10px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12.5px;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+    white-space: nowrap;
+  }
+  .sort-btn:hover {
+    color: var(--text);
+    border-color: rgba(110,168,254,0.4);
+  }
+  .sort-btn.active {
+    color: var(--text);
+    border-color: var(--accent);
+    background: rgba(110,168,254,0.15);
+    font-weight: 600;
+  }
+
+  .download-bar {
+    padding: 14px 22px;
+    border-bottom: 1px solid var(--panel-border);
+    background: rgba(255,255,255,0.02);
+  }
+  .download-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 11px 16px;
+    border-radius: 12px;
+    border: 1px solid rgba(110,168,254,0.35);
+    background: linear-gradient(135deg, rgba(110,168,254,0.18), rgba(139,123,255,0.14));
+    color: var(--text);
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .15s ease, transform .1s ease, opacity .15s ease;
+  }
+  .download-btn:hover { border-color: var(--accent); }
+  .download-btn:active { transform: scale(0.99); }
+  .download-btn:disabled { opacity: .55; cursor: default; }
+
+  .file-list {
+    max-height: 340px;
+    overflow-y: auto;
+  }
+  .file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 22px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 13.5px;
+  }
+  .file-row:last-child { border-bottom: none; }
+  .file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+  }
+  .file-date {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 500;
+    font-size: 12.5px;
+    background: rgba(110,168,254,0.12);
+    border: 1px solid rgba(110,168,254,0.25);
+    padding: 2px 8px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .file-date:hover {
+    background: rgba(110,168,254,0.22);
+  }
+  .file-date:active { transform: scale(0.96); }
+  .file-date.copied {
+    background: rgba(74,222,128,0.18);
+    border-color: rgba(74,222,128,0.4);
+    color: var(--good);
+  }
+  .file-date.none {
+    color: var(--muted);
+    background: transparent;
+    border-color: var(--panel-border);
+    cursor: default;
+  }
+  .file-pages {
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .file-pages.err { color: var(--bad); }
+  .file-row.error .file-name { color: var(--bad); }
+
+  .reset-btn {
+    display: block;
+    margin: 18px auto 0;
+    padding: 10px 20px;
+    border-radius: 12px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .reset-btn:hover { color: var(--text); border-color: var(--accent); }
+
+  .file-row.clickable {
+    cursor: pointer;
+    transition: background .12s ease;
+  }
+  .file-row.clickable:hover {
+    background: rgba(255,255,255,0.05);
+  }
+
+  .pdf-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(6,8,12,0.72);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 28px;
+  }
+  .pdf-modal-overlay.show {
+    display: flex;
+  }
+  .pdf-modal {
+    width: 100%;
+    max-width: 900px;
+    height: 88vh;
+    background: #14161d;
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+  }
+  .pdf-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--panel-border);
+    background: rgba(255,255,255,0.03);
+  }
+  .pdf-modal-title {
+    font-size: 13.5px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pdf-modal-close {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .pdf-modal-close:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .pdf-modal-body {
+    position: relative;
+    flex: 1;
+    background: #1c1e26;
+  }
+  .pdf-modal-body iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+  }
+  .pdf-modal-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 13.5px;
+  }
+  .pdf-modal-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(10,12,16,0.55);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+    transition: background .15s ease, border-color .15s ease, opacity .15s ease;
+    z-index: 5;
+  }
+  .pdf-modal-nav-btn:hover {
+    background: rgba(110,168,254,0.35);
+    border-color: var(--accent);
+  }
+  .pdf-modal-nav-btn:disabled {
+    opacity: 0.25;
+    cursor: default;
+    pointer-events: none;
+  }
+  .pdf-modal-prev { left: 14px; }
+  .pdf-modal-next { right: 14px; }
+  @media (max-width: 640px) {
+    .pdf-modal { height: 92vh; }
+    .pdf-modal-nav-btn { width: 36px; height: 36px; }
+  }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 8px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header-row">
+    <h1>ZIP → PDF Page Counter</h1>
+    <p class="sub">Every PDF is scanned in your browser; order dates are read from filenames. Nothing is uploaded anywhere.</p>
+  </div>
+
+  <div class="dropzone" id="dropzone">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+      <path d="M12 12v9"/>
+      <path d="m8 16 4-4 4 4"/>
+    </svg>
+    <div class="dz-text">
+      <div class="dz-title">Drop ZIP file(s), PDFs, or a folder here</div>
+      <div class="dz-sub">or click to browse — multiple zips/PDFs supported</div>
+    </div>
+    <input type="file" id="fileInput" accept=".zip,.pdf" multiple>
+  </div>
+
+  <div class="top-controls">
+    <button class="scan-export-btn" id="scanExportBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+        <circle cx="11" cy="11" r="7"/>
+        <path d="m21 21-4.3-4.3"/>
+      </svg>
+      <span>Scan a folder, rename &amp; auto-export ZIPs</span>
+    </button>
+    <button class="folder-import-btn" id="folderImportBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">
+        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/>
+      </svg>
+      <span>Import a whole folder (review first)</span>
+    </button>
+    <button class="folder-import-btn" id="zipImportBtn" type="button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="15" height="15">
+        <path d="M4 4h9l7 7v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/>
+        <path d="M13 4v6h6"/>
+        <path d="M10 13v6M8 15h4M8 17h4"/>
+      </svg>
+      <span>Import ZIP or PDF file(s) instead</span>
+    </button>
+  </div>
+  <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none;">
+
+  <div class="search-bar" id="searchBar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="7"/>
+      <path d="m21 21-4.3-4.3"/>
+    </svg>
+    <input type="text" id="searchInput" placeholder="Search by filename, case number, or date…">
+    <button class="search-clear" id="searchClear">&times;</button>
+  </div>
+
+  <div class="status" id="status">
+    <div class="spinner"></div>
+    <span id="statusText">Reading zip…</span>
+  </div>
+
+
+  <div class="results" id="results">
+    <div class="summary">
+      <div class="stat">
+        <div class="big" id="pdfCount">0</div>
+        <div class="lbl">PDFs in this folder</div>
+      </div>
+      <div class="divider"></div>
+      <div class="stat">
+        <div class="big" id="pageCount">0</div>
+        <div class="lbl">Pages in this folder</div>
+      </div>
+      <div class="overall-stats" id="overallStats"></div>
+    </div>
+    <div class="sort-controls" id="sortControls">
+      <span class="sort-label">Sort by:</span>
+      <button class="sort-btn active" data-sort="pages" type="button">Most pages first</button>
+      <button class="sort-btn" data-sort="date-desc" type="button">Newest date first</button>
+      <button class="sort-btn" data-sort="date-asc" type="button">Oldest date first</button>
+    </div>
+    <div class="folder-search-bar" id="folderSearchBar">
+      <textarea id="folderSearchInput" rows="1" placeholder="Search folders — paste a list like: 10101.zip 3  10103.zip 3  10114.zip 3"></textarea>
+      <button class="folder-search-btn" id="folderSearchBtn" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="14" height="14">
+          <circle cx="11" cy="11" r="7"/>
+          <path d="m21 21-4.3-4.3"/>
+        </svg>
+        Search
+      </button>
+      <button class="search-clear" id="folderSearchClearBtn">&times;</button>
+    </div>
+    <div class="folder-tabs" id="folderTabs"></div>
+    <div class="download-bar" id="downloadBar">
+      <button class="download-btn" id="downloadBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <path d="M12 3v12"/>
+          <path d="m7 10 5 5 5-5"/>
+          <path d="M5 21h14"/>
+        </svg>
+        <span id="downloadBtnText">Download all ZIPs as one file</span>
+      </button>
+    </div>
+    <div class="file-list" id="fileList"></div>
+  </div>
+
+  <div class="rename-section" id="renameSection">
+    <div class="rename-header">
+      <div class="rename-title">Rename &amp; merge exports</div>
+      <div class="rename-sub">category_caseNo_year.zip — zips and loose PDFs sharing the same case are merged into one output</div>
+    </div>
+    <div class="download-bar">
+      <button class="download-btn" id="renameDownloadBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16">
+          <path d="M12 3v12"/>
+          <path d="m7 10 5 5 5-5"/>
+          <path d="M5 21h14"/>
+        </svg>
+        <span id="renameDownloadBtnText">Download all renamed ZIPs (as one file)</span>
+      </button>
+    </div>
+    <div class="file-list" id="renameList"></div>
+  </div>
+
+  <button class="reset-btn" id="resetBtn" style="display:none;">Start over</button>
+</div>
+
+<div class="pdf-modal-overlay" id="pdfModalOverlay">
+  <div class="pdf-modal">
+    <div class="pdf-modal-header">
+      <span class="pdf-modal-title" id="pdfModalTitle">document.pdf</span>
+      <button class="pdf-modal-close" id="pdfModalClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="pdf-modal-body" id="pdfModalBody">
+      <div class="pdf-modal-loading" id="pdfModalLoading">Opening PDF…</div>
+      <iframe id="pdfModalFrame" title="PDF preview"></iframe>
+      <button class="pdf-modal-nav-btn pdf-modal-prev" id="pdfModalPrev" aria-label="Previous PDF">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <button class="pdf-modal-nav-btn pdf-modal-next" id="pdfModalNext" aria-label="Next PDF">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  const dropzone   = document.getElementById('dropzone');
+  const fileInput   = document.getElementById('fileInput');
+  const statusBox   = document.getElementById('status');
+  const statusText  = document.getElementById('statusText');
+  const resultsBox  = document.getElementById('results');
+  const fileList    = document.getElementById('fileList');
+  const pdfCountEl  = document.getElementById('pdfCount');
+  const pageCountEl = document.getElementById('pageCount');
+  const overallStatsEl = document.getElementById('overallStats');
+  const folderTabsEl = document.getElementById('folderTabs');
+  const folderSearchBar = document.getElementById('folderSearchBar');
+  const folderSearchInput = document.getElementById('folderSearchInput');
+  const folderSearchBtn = document.getElementById('folderSearchBtn');
+  const folderSearchClearBtn = document.getElementById('folderSearchClearBtn');
+  const sortControlsEl = document.getElementById('sortControls');
+  const resetBtn    = document.getElementById('resetBtn');
+  const downloadBar = document.getElementById('downloadBar');
+  const downloadBtn = document.getElementById('downloadBtn');
+  const downloadBtnText = document.getElementById('downloadBtnText');
+  const renameSection = document.getElementById('renameSection');
+  const renameListEl = document.getElementById('renameList');
+  const renameDownloadBtn = document.getElementById('renameDownloadBtn');
+  const renameDownloadBtnText = document.getElementById('renameDownloadBtnText');
+  const pdfModalOverlay = document.getElementById('pdfModalOverlay');
+  const pdfModalFrame   = document.getElementById('pdfModalFrame');
+  const pdfModalTitle   = document.getElementById('pdfModalTitle');
+  const pdfModalClose   = document.getElementById('pdfModalClose');
+  const pdfModalLoading = document.getElementById('pdfModalLoading');
+  const pdfModalPrev = document.getElementById('pdfModalPrev');
+  const pdfModalNext = document.getElementById('pdfModalNext');
+
+  let currentPdfObjectUrl = null;
+  // The list of previewable PDFs in the currently-open folder, and where we are in it —
+  // lets the modal's arrow buttons step through without closing/reopening.
+  let currentPreviewList = [];
+  let currentPreviewIndex = -1;
+
+  // Current sort mode for the file list: 'pages' | 'date-desc' | 'date-asc'
+  let currentSortMode = 'pages';
+
+  function openPdfPreview(arrayBuffer, title) {
+    pdfModalTitle.textContent = title;
+    pdfModalLoading.style.display = 'flex';
+    pdfModalFrame.style.visibility = 'hidden';
+
+    if (currentPdfObjectUrl) {
+      URL.revokeObjectURL(currentPdfObjectUrl);
+      currentPdfObjectUrl = null;
+    }
+
+    const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+    currentPdfObjectUrl = URL.createObjectURL(blob);
+    pdfModalFrame.src = currentPdfObjectUrl;
+    pdfModalOverlay.classList.add('show');
+  }
+
+  // Opens the PDF at `index` within currentPreviewList and updates arrow button states.
+  async function openPdfPreviewAt(index) {
+    if (index < 0 || index >= currentPreviewList.length) return;
+    currentPreviewIndex = index;
+    const item = currentPreviewList[index];
+
+    pdfModalPrev.disabled = index === 0;
+    pdfModalNext.disabled = index === currentPreviewList.length - 1;
+
+    try {
+      const data = await item.entry.async('arraybuffer');
+      openPdfPreview(data, item.displayPath.split(' » ').pop());
+    } catch (err) {
+      alert('Could not open this PDF: ' + err.message);
+    }
+  }
+
+  function closePdfPreview() {
+    pdfModalOverlay.classList.remove('show');
+    pdfModalFrame.src = 'about:blank';
+    if (currentPdfObjectUrl) {
+      URL.revokeObjectURL(currentPdfObjectUrl);
+      currentPdfObjectUrl = null;
+    }
+    currentPreviewIndex = -1;
+  }
+
+  pdfModalFrame.addEventListener('load', () => {
+    if (pdfModalFrame.src !== 'about:blank' && pdfModalFrame.src) {
+      pdfModalLoading.style.display = 'none';
+      pdfModalFrame.style.visibility = 'visible';
+    }
+  });
+
+  pdfModalClose.addEventListener('click', closePdfPreview);
+  pdfModalOverlay.addEventListener('click', e => {
+    if (e.target === pdfModalOverlay) closePdfPreview();
+  });
+  pdfModalPrev.addEventListener('click', () => openPdfPreviewAt(currentPreviewIndex - 1));
+  pdfModalNext.addEventListener('click', () => openPdfPreviewAt(currentPreviewIndex + 1));
+  document.addEventListener('keydown', e => {
+    if (!pdfModalOverlay.classList.contains('show')) return;
+    if (e.key === 'Escape') closePdfPreview();
+    else if (e.key === 'ArrowLeft') openPdfPreviewAt(currentPreviewIndex - 1);
+    else if (e.key === 'ArrowRight') openPdfPreviewAt(currentPreviewIndex + 1);
+  });
+
+  // Holds the original zip File objects from the most recent run,
+  // so "Download all" can bundle them without re-reading from disk.
+  let allPdfItems = [];
+  let loadedZipFiles = [];
+  let zipRenameMap = [];
+  let zipGroups = [];
+  let looseGroups = [];
+  let currentFolderIndex = 0;
+  const folderInput = document.getElementById('folderInput');
+  const folderImportBtn = document.getElementById('folderImportBtn');
+  const scanExportBtn = document.getElementById('scanExportBtn');
+  const zipImportBtn = document.getElementById('zipImportBtn');
+  const searchBar = document.getElementById('searchBar');
+  const searchInput = document.getElementById('searchInput');
+  const searchClear = document.getElementById('searchClear');
+  let pendingAutoExport = false;
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  zipImportBtn.addEventListener('click', () => fileInput.click());
+  folderImportBtn.addEventListener('click', () => {
+    pendingAutoExport = false;
+    folderInput.click();
+  });
+  scanExportBtn.addEventListener('click', () => {
+    pendingAutoExport = true;
+    folderInput.click();
+  });
+
+  ['dragenter','dragover'].forEach(evt =>
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.add('dragover');
+    })
+  );
+  ['dragleave','drop'].forEach(evt =>
+    dropzone.addEventListener(evt, e => {
+      e.preventDefault(); e.stopPropagation();
+      dropzone.classList.remove('dragover');
+    })
+  );
+
+  // Recursively walks a dropped FileSystemEntry (file or folder) and
+  // resolves to a flat array of File objects — this is what lets dragging
+  // a whole folder in pick up every zip nested inside it.
+  function traverseEntry(entry) {
+    return new Promise(resolve => {
+      if (!entry) { resolve([]); return; }
+      if (entry.isFile) {
+        entry.file(file => resolve([file]), () => resolve([]));
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        let collected = [];
+        const readBatch = () => {
+          reader.readEntries(async batch => {
+            if (!batch.length) {
+              const nested = await Promise.all(collected.map(traverseEntry));
+              resolve(nested.flat());
+            } else {
+              collected = collected.concat(batch);
+              readBatch(); // directory readers can paginate — keep going until empty
+            }
+          }, () => resolve([]));
+        };
+        readBatch();
+      } else {
+        resolve([]);
+      }
+    });
+  }
+
+  async function getAllDroppedFiles(dataTransfer) {
+    const items = dataTransfer.items;
+    if (items && items.length && items[0].webkitGetAsEntry) {
+      const entries = Array.from(items)
+        .map(item => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null))
+        .filter(Boolean);
+      const nested = await Promise.all(entries.map(traverseEntry));
+      return nested.flat();
+    }
+    // Fallback for browsers without the entries API — folders won't recurse here.
+    return Array.from(dataTransfer.files || []);
+  }
+
+  dropzone.addEventListener('drop', async e => {
+    const files = await getAllDroppedFiles(e.dataTransfer);
+    if (files.length) handleZips(files);
+  });
+  fileInput.addEventListener('change', e => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) handleZips(files);
+  });
+  folderInput.addEventListener('change', e => {
+    // webkitdirectory already returns every file in the folder tree, flattened.
+    const files = Array.from(e.target.files || []);
+    const autoExport = pendingAutoExport;
+    pendingAutoExport = false;
+    if (files.length) handleZips(files, { autoExport });
+  });
+
+  resetBtn.addEventListener('click', () => {
+    resultsBox.classList.remove('show');
+    resetBtn.style.display = 'none';
+    fileList.innerHTML = '';
+    pdfCountEl.textContent = '0';
+    pageCountEl.textContent = '0';
+    fileInput.value = '';
+    folderInput.value = '';
+    allPdfItems = [];
+    loadedZipFiles = [];
+    zipRenameMap = [];
+    zipGroups = [];
+    looseGroups = [];
+    currentFolderIndex = 0;
+    currentSortMode = 'pages';
+    sortControlsEl.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b.dataset.sort === 'pages'));
+    folderTabsEl.innerHTML = '';
+    folderTabsEl.classList.remove('show');
+    folderSearchBar.classList.remove('show');
+    folderSearchInput.value = '';
+    overallStatsEl.textContent = '';
+    renameListEl.innerHTML = '';
+    renameSection.classList.remove('show');
+    searchBar.classList.remove('show');
+    searchInput.value = '';
+    searchClear.classList.remove('show');
+  });
+
+  searchInput.addEventListener('input', () => {
+    const query = searchInput.value.trim().toLowerCase();
+    searchClear.classList.toggle('show', query.length > 0);
+    document.querySelectorAll('#fileList .file-row, #renameList .file-row').forEach(row => {
+      const haystack = row.dataset.search || '';
+      row.style.display = (!query || haystack.includes(query)) ? '' : 'none';
+    });
+  });
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    searchInput.dispatchEvent(new Event('input'));
+    searchInput.focus();
+  });
+
+  downloadBtn.addEventListener('click', downloadAllPdfs);
+  renameDownloadBtn.addEventListener('click', downloadRenamedZips);
+
+  sortControlsEl.querySelectorAll('.sort-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentSortMode = btn.dataset.sort;
+      sortControlsEl.querySelectorAll('.sort-btn').forEach(b => b.classList.toggle('active', b === btn));
+      selectFolder(currentFolderIndex);
+    });
+  });
+
+  folderSearchBtn.addEventListener('click', () => runFolderSearch());
+  folderSearchInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      runFolderSearch();
+    }
+  });
+  folderSearchClearBtn.addEventListener('click', () => {
+    folderSearchInput.value = '';
+    runFolderSearch();
+    folderSearchInput.focus();
+  });
+
+  // Pulls out the zip names to search for. Handles pasted lists like
+  // "10101.zip 3  10103.zip 3  10114.zip 3" — grabs every "*.zip" token
+  // and ignores the stray numbers sitting next to them.
+  function extractFolderSearchTerms(text) {
+    const zipTokens = text.match(/[^\s,]+\.zip\b/gi);
+    if (zipTokens && zipTokens.length) {
+      return zipTokens.map(t => t.toLowerCase());
+    }
+    // No ".zip" suffixes present — fall back to any non-numeric token (e.g. bare case numbers).
+    return text.split(/[\s,]+/)
+      .map(t => t.trim())
+      .filter(t => t && !/^\d+$/.test(t))
+      .map(t => t.toLowerCase());
+  }
+
+  function runFolderSearch() {
+    const raw = folderSearchInput.value.trim();
+    const terms = raw ? extractFolderSearchTerms(raw) : [];
+
+    const tabs = folderTabsEl.querySelectorAll('.folder-tab');
+    let firstMatchIdx = null;
+
+    tabs.forEach(tab => {
+      const idx = Number(tab.dataset.folderIdx);
+      const group = zipGroups[idx];
+      if (!group) return;
+
+      let matched = true;
+      if (terms.length) {
+        const zipName = group.zipName.toLowerCase();
+        const zipBase = zipName.replace(/\.zip$/, '');
+        matched = terms.some(term => {
+          const termBase = term.replace(/\.zip$/, '');
+          return zipName.includes(term) || zipBase.includes(termBase);
+        });
+      }
+
+      tab.style.display = matched ? '' : 'none';
+      if (matched && firstMatchIdx === null) firstMatchIdx = idx;
+    });
+
+    if (firstMatchIdx !== null) {
+      selectFolder(firstMatchIdx);
+    } else if (terms.length) {
+      fileList.innerHTML = '<div class="file-row"><div class="file-name" style="color:var(--muted)">No matching folders found.</div></div>';
+      pdfCountEl.textContent = '0';
+      pageCountEl.textContent = '0';
+    }
+  }
+
+  function setStatus(text) {
+    statusBox.classList.add('show');
+    statusText.textContent = text;
+  }
+
+  // Pulls an order date out of filenames shaped like:
+  //   CWP_7507_2018_04_03_2024_FINAL_ORDER.pdf
+  //   CWP_15665_2018_22_06_2018_INTERIM_ORDER.pdf
+  // The case number/year (7507_2018) sits earlier and must be ignored —
+  // only the DD_MM_YYYY group that sits directly before FINAL_ORDER or
+  // INTERIM_ORDER counts. A negative lookbehind/lookahead for digits stops
+  // it from matching inside a longer run of digits (like grabbing "18" out of "2018").
+  // Copies text to the clipboard and briefly flashes the badge to confirm it worked.
+  async function copyToClipboard(text, badgeEl) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (err) {
+      // Fallback for browsers/contexts where the Clipboard API is unavailable.
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta);
+    }
+
+    const originalText = badgeEl.textContent;
+    const originalClass = badgeEl.className;
+    badgeEl.textContent = 'Copied!';
+    badgeEl.classList.add('copied');
+    setTimeout(() => {
+      badgeEl.textContent = originalText;
+      badgeEl.className = originalClass;
+    }, 1000);
+  }
+
+  function extractFinalOrderDate(filename) {
+    const base = filename.replace(/\.pdf$/i, '');
+    const re = /(?<!\d)(\d{2})[_\-](\d{2})[_\-](\d{4})(?!\d)(?=[_\-\s]*(?:FINAL|INTERIM)[_\-\s]*ORDER)/i;
+    const match = base.match(re);
+    if (!match) return null;
+    const [, dd, mm, yyyy] = match;
+    // Sanity check it's a plausible date before trusting the match.
+    const d = parseInt(dd, 10), m = parseInt(mm, 10);
+    if (d < 1 || d > 31 || m < 1 || m > 12) return null;
+    return `${dd}-${mm}-${yyyy}`;
+  }
+
+  // Converts a "DD-MM-YYYY" string (as produced by extractFinalOrderDate)
+  // into a comparable timestamp for sorting.
+  function dateStrToTimestamp(dateStr) {
+    const [dd, mm, yyyy] = dateStr.split('-').map(Number);
+    return new Date(yyyy, mm - 1, dd).getTime();
+  }
+
+  // Returns a new sorted copy of a folder's results array, according to mode:
+  //  'pages'      -> most pages first (unreadable/no-page entries sink to the bottom)
+  //  'date-desc'  -> newest order date first (entries with no date sink to the bottom)
+  //  'date-asc'   -> oldest order date first (entries with no date sink to the bottom)
+  function sortResultsByMode(results, mode) {
+    const arr = results.slice();
+    if (mode === 'date-desc' || mode === 'date-asc') {
+      arr.sort((a, b) => {
+        const aHas = !!a.foundDate, bHas = !!b.foundDate;
+        if (!aHas && !bHas) return 0;
+        if (!aHas) return 1;
+        if (!bHas) return -1;
+        const at = dateStrToTimestamp(a.foundDate);
+        const bt = dateStrToTimestamp(b.foundDate);
+        return mode === 'date-desc' ? bt - at : at - bt;
+      });
+    } else {
+      arr.sort((a, b) => {
+        if (a.numPages === null && b.numPages === null) return 0;
+        if (a.numPages === null) return 1;
+        if (b.numPages === null) return -1;
+        return b.numPages - a.numPages;
+      });
+    }
+    return arr;
+  }
+
+  // Pulls category + case number + filing year out of filenames shaped like:
+  //   CWP_18288_2008_INTERIM_ORDERS.pdf        -> CWP_18288_2008
+  //   CRWP_9829_2024_10_10_2024_INTERIM_ORDER.pdf -> CRWP_9829_2024
+  // These three tokens always sit first, in that order, separated by
+  // underscores/hyphens — everything after (order type, order date) is ignored.
+  function extractCategoryCaseYear(filename) {
+    const base = filename.replace(/\.pdf$/i, '');
+    // Category can be a single word (CWP) or hyphenated (CRM-M, FAO-M, C-WRIT) —
+    // letters, optionally with hyphen-joined letter groups — before the case number.
+    const m = base.match(/^([A-Za-z]+(?:-[A-Za-z]+)*)[_\-](\d+)[_\-](\d{4})(?:[_\-]|$)/);
+    if (!m) return null;
+    return { category: m[1].toUpperCase(), caseNo: m[2], year: m[3] };
+  }
+
+  // Given all the PDFs found inside one zip, figures out the single most
+  // common category_caseNo_year across them (a case folder should be
+  // consistent) and returns the suggested new zip filename, or null.
+  // Wraps a plain File so it can be used anywhere a JSZip file entry is expected
+  // (both expose an async(type) method that resolves to an ArrayBuffer) — this lets
+  // loose PDFs (not inside any zip) flow through the same preview/bundling code paths.
+  function wrapFileAsEntry(file) {
+    return { async: async () => file.arrayBuffer() };
+  }
+
+  // Resolves a filename collision by appending "_extra" (then "_extra2", "_extra3"...)
+  // before the extension, instead of the more generic "(1)" — e.g.
+  // "order.pdf" + "order.pdf" -> "order.pdf" and "order_extra.pdf".
+  function dedupeFilename(name, usedNames) {
+    if (!usedNames.has(name)) {
+      usedNames.add(name);
+      return name;
+    }
+    const dot = name.lastIndexOf('.');
+    const base = dot > -1 ? name.slice(0, dot) : name;
+    const ext = dot > -1 ? name.slice(dot) : '';
+    let candidate = `${base}_extra${ext}`;
+    let n = 2;
+    while (usedNames.has(candidate)) {
+      candidate = `${base}_extra${n}${ext}`;
+      n++;
+    }
+    usedNames.add(candidate);
+    return candidate;
+  }
+
+  function suggestZipName(pdfDisplayPaths) {
+    const tally = new Map(); // key "CAT_NO_YEAR" -> count
+    for (const path of pdfDisplayPaths) {
+      const filename = path.split(' » ').pop().split('/').pop();
+      const parsed = extractCategoryCaseYear(filename);
+      if (!parsed) continue;
+      const key = `${parsed.category}_${parsed.caseNo}_${parsed.year}`;
+      tally.set(key, (tally.get(key) || 0) + 1);
+    }
+    if (tally.size === 0) return null;
+    let bestKey = null, bestCount = -1;
+    for (const [key, count] of tally) {
+      if (count > bestCount) { bestKey = key; bestCount = count; }
+    }
+    return `${bestKey}.zip`;
+  }
+
+  // Recursively walk a zip's entries, collecting PDFs (with a display path)
+  // and descending into any nested .zip files found along the way.
+  async function collectPdfs(zip, pathPrefix) {
+    const collected = [];
+    const entries = Object.values(zip.files);
+
+    for (const entry of entries) {
+      if (entry.dir) continue;
+      const lowerName = entry.name.toLowerCase();
+      const displayPath = pathPrefix + entry.name;
+
+      if (lowerName.endsWith('.pdf')) {
+        collected.push({ entry, displayPath });
+      } else if (lowerName.endsWith('.zip')) {
+        try {
+          const nestedData = await entry.async('arraybuffer');
+          const nestedZip = await JSZip.loadAsync(nestedData);
+          const nestedPdfs = await collectPdfs(nestedZip, displayPath + ' » ');
+          collected.push(...nestedPdfs);
+        } catch (err) {
+          // Nested zip couldn't be opened (corrupt / password-protected) — skip it.
+          collected.push({ entry: null, displayPath, unreadableZip: true });
+        }
+      }
+    }
+    return collected;
+  }
+
+  async function handleZips(files, options = {}) {
+    const autoExport = !!options.autoExport;
+    const zipFiles = files.filter(f => f.name.toLowerCase().endsWith('.zip'));
+    const loosePdfFiles = files.filter(f => f.name.toLowerCase().endsWith('.pdf'));
+
+    if (zipFiles.length === 0 && loosePdfFiles.length === 0) {
+      alert('Please drop one or more .zip files (or PDFs).');
+      return;
+    }
+
+    resultsBox.classList.remove('show');
+    resetBtn.style.display = 'none';
+    fileList.innerHTML = '';
+    allPdfItems = [];
+    loadedZipFiles = zipFiles;
+    zipRenameMap = [];
+    zipGroups = [];
+    looseGroups = [];
+
+    try {
+      for (let zi = 0; zi < zipFiles.length; zi++) {
+        const file = zipFiles[zi];
+        const zipLabel = zipFiles.length > 1 ? `"${file.name}" ` : '';
+        setStatus(`Scanning ${zipLabel}(zip ${zi + 1}/${zipFiles.length})…`);
+
+        const groupResults = [];
+
+        let rootZip;
+        try {
+          rootZip = await JSZip.loadAsync(file);
+        } catch (err) {
+          groupResults.push({ displayPath: file.name, unreadableZip: true, numPages: null });
+          zipRenameMap.push({ file, originalName: file.name, newName: null, matched: false, groupResults });
+          zipGroups.push({ zipName: file.name, results: groupResults, totalPages: 0, pdfCount: 0 });
+          continue;
+        }
+
+        const pdfEntries = await collectPdfs(rootZip, '');
+        const suggested = suggestZipName(pdfEntries.filter(p => !p.unreadableZip).map(p => p.displayPath));
+
+        let groupTotalPages = 0;
+        let groupPdfCount = 0;
+
+        for (const item of pdfEntries) {
+          if (item.unreadableZip) {
+            groupResults.push({ displayPath: item.displayPath, unreadableZip: true, numPages: null });
+            continue;
+          }
+
+          setStatus(`Counting pages… ${item.displayPath}`);
+          const foundDate = extractFinalOrderDate(item.displayPath.split(' » ').pop());
+
+          try {
+            const data = await item.entry.async('arraybuffer');
+            const pdf = await pdfjsLib.getDocument({ data: data.slice(0) }).promise;
+            const numPages = pdf.numPages;
+            groupTotalPages += numPages;
+            groupPdfCount++;
+            groupResults.push({ displayPath: item.displayPath, foundDate, numPages, entry: item.entry });
+          } catch (err) {
+            groupResults.push({ displayPath: item.displayPath, foundDate, numPages: null, error: true });
+          }
+        }
+
+        // Default order within this folder: largest page count first.
+        // Unreadable/error entries sink to the bottom. The user can re-sort
+        // by date via the sort controls once results are rendered.
+        groupResults.sort((a, b) => {
+          if (a.numPages === null && b.numPages === null) return 0;
+          if (a.numPages === null) return 1;
+          if (b.numPages === null) return -1;
+          return b.numPages - a.numPages;
+        });
+
+        zipRenameMap.push({
+          file,
+          originalName: file.name,
+          newName: suggested,
+          matched: !!suggested,
+          groupResults
+        });
+
+        zipGroups.push({
+          zipName: file.name,
+          results: groupResults,
+          totalPages: groupTotalPages,
+          pdfCount: groupPdfCount
+        });
+      }
+
+      // Loose PDFs (not inside any zip) — grouped by the case pattern in each filename,
+      // so PDFs belonging to the same case end up together, same as a zip's contents would.
+      if (loosePdfFiles.length > 0) {
+        const bucketsByKey = new Map(); // key -> { files: [], results: [] }
+
+        for (const file of loosePdfFiles) {
+          setStatus(`Counting pages… ${file.name}`);
+          const foundDate = extractFinalOrderDate(file.name);
+          const parsed = extractCategoryCaseYear(file.name);
+          const key = parsed ? `${parsed.category}_${parsed.caseNo}_${parsed.year}` : '__unmatched__';
+
+          if (!bucketsByKey.has(key)) bucketsByKey.set(key, { files: [], results: [] });
+          const bucket = bucketsByKey.get(key);
+          bucket.files.push(file);
+
+          try {
+            const data = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: data.slice(0) }).promise;
+            bucket.results.push({
+              displayPath: file.name,
+              foundDate,
+              numPages: pdf.numPages,
+              entry: wrapFileAsEntry(file)
+            });
+          } catch (err) {
+            bucket.results.push({ displayPath: file.name, foundDate, numPages: null, error: true });
+          }
+        }
+
+        for (const [key, bucket] of bucketsByKey) {
+          bucket.results.sort((a, b) => {
+            if (a.numPages === null && b.numPages === null) return 0;
+            if (a.numPages === null) return 1;
+            if (b.numPages === null) return -1;
+            return b.numPages - a.numPages;
+          });
+          const totalPages = bucket.results.reduce((s, r) => s + (r.numPages || 0), 0);
+          const pdfCount = bucket.results.filter(r => r.entry).length;
+          const isUnmatched = key === '__unmatched__';
+
+          const group = {
+            zipName: isUnmatched ? 'Unmatched PDFs' : `${key}.zip`,
+            results: bucket.results,
+            totalPages,
+            pdfCount,
+            isLoose: true,
+            looseFiles: bucket.files,
+            looseKey: isUnmatched ? null : key
+          };
+          zipGroups.push(group);
+          looseGroups.push(group);
+        }
+      }
+
+      const anyPdfsFound = zipGroups.some(g => g.results.length > 0);
+      if (!anyPdfsFound) {
+        setStatus('No PDF files found (including nested zips).');
+        setTimeout(() => statusBox.classList.remove('show'), 2500);
+        return;
+      }
+
+      // Collect every successfully-read PDF across all folders for the bundle download,
+      // independent of which single folder is currently being viewed.
+      for (const group of zipGroups) {
+        for (const r of group.results) {
+          if (r.entry) allPdfItems.push({ entry: r.entry, displayPath: r.displayPath });
+        }
+      }
+
+      renderFolderTabs();
+      selectFolder(0);
+
+      searchBar.classList.add('show');
+      downloadBtnText.textContent = `Download all ${allPdfItems.length} PDFs as one ZIP`;
+      resultsBox.classList.add('show');
+      resetBtn.style.display = 'block';
+      statusBox.classList.remove('show');
+
+      renderRenameList();
+
+      if (autoExport) {
+        setStatus('Auto-exporting renamed ZIPs…');
+        statusBox.classList.add('show');
+        await downloadRenamedZips();
+        statusBox.classList.remove('show');
+      }
+
+    } catch (err) {
+      setStatus('Something went wrong: ' + err.message);
+      setTimeout(() => statusBox.classList.remove('show'), 4000);
+    }
+  }
+
+  function renderFolderTabs() {
+    folderTabsEl.innerHTML = '';
+    overallStatsEl.textContent = '';
+
+    if (zipGroups.length <= 1) {
+      folderTabsEl.classList.remove('show');
+      folderSearchBar.classList.remove('show');
+      return;
+    }
+    folderSearchBar.classList.add('show');
+
+    zipGroups.forEach((group, idx) => {
+      const tab = document.createElement('button');
+      tab.className = 'folder-tab';
+      tab.type = 'button';
+      tab.innerHTML = `<span>${group.zipName}</span><span class="count-badge">${group.pdfCount}</span>`;
+      tab.addEventListener('click', () => selectFolder(idx));
+      tab.dataset.folderIdx = idx;
+      folderTabsEl.appendChild(tab);
+    });
+
+    folderTabsEl.classList.add('show');
+
+    const totalPdfs = zipGroups.reduce((s, g) => s + g.pdfCount, 0);
+    const totalPages = zipGroups.reduce((s, g) => s + g.totalPages, 0);
+    overallStatsEl.textContent = `${zipGroups.length} folders • ${totalPdfs} PDFs • ${totalPages} pages total`;
+  }
+
+  function selectFolder(idx) {
+    currentFolderIndex = idx;
+    const group = zipGroups[idx];
+    if (!group) return;
+
+    folderTabsEl.querySelectorAll('.folder-tab').forEach(tab => {
+      tab.classList.toggle('active', Number(tab.dataset.folderIdx) === idx);
+    });
+
+    const sortedResults = sortResultsByMode(group.results, currentSortMode);
+
+    fileList.innerHTML = '';
+    for (const r of sortedResults) {
+      fileList.appendChild(renderPdfRow(r));
+    }
+
+    // Successfully-read PDFs, in display order — this is what the modal's arrows step through.
+    currentPreviewList = sortedResults.filter(r => r.entry);
+
+    pdfCountEl.textContent = group.pdfCount;
+    pageCountEl.textContent = group.totalPages;
+
+    // Re-apply any active search filter to the newly rendered rows.
+    if (searchInput.value.trim()) {
+      searchInput.dispatchEvent(new Event('input'));
+    }
+  }
+
+  // Builds one row element for a single PDF result. Shared between the
+  // per-folder view (selectFolder) so rendering logic only lives in one place.
+  function renderPdfRow(r) {
+    const row = document.createElement('div');
+    row.className = 'file-row';
+    row.dataset.search = r.displayPath.toLowerCase() + ' ' + (r.foundDate || '');
+    const nameEl = document.createElement('div');
+    nameEl.className = 'file-name';
+    nameEl.textContent = r.displayPath;
+    row.appendChild(nameEl);
+
+    if (r.unreadableZip || r.error) {
+      row.classList.add('error');
+      const pagesEl = document.createElement('div');
+      pagesEl.className = 'file-pages err';
+      pagesEl.textContent = r.unreadableZip ? 'zip unreadable' : 'unreadable';
+      row.appendChild(pagesEl);
+      return row;
+    }
+
+    const dateEl = document.createElement('div');
+    if (r.foundDate) {
+      dateEl.className = 'file-date';
+      dateEl.textContent = r.foundDate;
+      dateEl.title = 'Click to copy date';
+      dateEl.addEventListener('click', e => {
+        e.stopPropagation();
+        copyToClipboard(r.foundDate, dateEl);
+      });
+    } else {
+      dateEl.className = 'file-date none';
+      dateEl.textContent = 'no date';
+    }
+    row.appendChild(dateEl);
+
+    const pagesEl = document.createElement('div');
+    pagesEl.className = 'file-pages';
+    pagesEl.textContent = r.numPages + (r.numPages === 1 ? ' page' : ' pages');
+    row.appendChild(pagesEl);
+
+    row.classList.add('clickable');
+    row.title = 'Click to preview this PDF';
+    row.addEventListener('click', () => {
+      const idx = currentPreviewList.indexOf(r);
+      if (idx !== -1) openPdfPreviewAt(idx);
+    });
+
+    return row;
+  }
+
+  // Builds the actual export plan: merges any real zip and any loose-PDF group that
+  // share the same suggested category_caseNo_year name into one combined output,
+  // so "zip + pdf belonging to the same case" become a single exported zip.
+  function buildExportPlan() {
+    const nameGroups = new Map(); // outputName -> { zips: [...zipRenameMap entries], looseGroups: [...group] }
+
+    for (const z of zipRenameMap) {
+      if (!z.matched) continue;
+      if (!nameGroups.has(z.newName)) nameGroups.set(z.newName, { zips: [], looseGroups: [] });
+      nameGroups.get(z.newName).zips.push(z);
+    }
+    for (const lg of looseGroups) {
+      if (!lg.looseKey) continue;
+      const key = `${lg.looseKey}.zip`;
+      if (!nameGroups.has(key)) nameGroups.set(key, { zips: [], looseGroups: [] });
+      nameGroups.get(key).looseGroups.push(lg);
+    }
+
+    const units = [];
+    const usedOutputNames = new Set();
+
+    for (const [key, bucket] of nameGroups) {
+      let outputName = key;
+      while (usedOutputNames.has(outputName)) {
+        outputName = outputName.replace(/\.zip$/i, '') + '_extra.zip';
+      }
+      usedOutputNames.add(outputName);
+
+      if (bucket.zips.length === 1 && bucket.looseGroups.length === 0) {
+        // Only one source, no merge needed — reuse the original zip bytes as-is (fast, preserves structure).
+        units.push({
+          outputName,
+          kind: 'fastcopy',
+          fastCopyFile: bucket.zips[0].file,
+          description: bucket.zips[0].originalName
+        });
+      } else {
+        // Two or more sources sharing this case identifier — rebuild a fresh combined zip.
+        const pdfSources = [];
+        const descParts = [];
+        for (const z of bucket.zips) {
+          for (const r of z.groupResults) {
+            if (r.entry) pdfSources.push({ entry: r.entry, name: r.displayPath.split(' » ').pop().split('/').pop() });
+          }
+          descParts.push(z.originalName);
+        }
+        for (const lg of bucket.looseGroups) {
+          for (const r of lg.results) {
+            if (r.entry) pdfSources.push({ entry: r.entry, name: r.displayPath });
+          }
+          descParts.push(`${lg.looseFiles.length} loose PDF${lg.looseFiles.length === 1 ? '' : 's'}`);
+        }
+        units.push({ outputName, kind: 'rebuild', pdfSources, description: descParts.join(' + ') });
+      }
+    }
+
+    // Zips with no recognizable pattern — kept standalone with their original name.
+    for (const z of zipRenameMap) {
+      if (z.matched) continue;
+      let outputName = z.originalName;
+      while (usedOutputNames.has(outputName)) {
+        const dot = outputName.lastIndexOf('.');
+        const base = dot > -1 ? outputName.slice(0, dot) : outputName;
+        const ext = dot > -1 ? outputName.slice(dot) : '';
+        outputName = `${base}_extra${ext}`;
+      }
+      usedOutputNames.add(outputName);
+      units.push({ outputName, kind: 'fastcopy', fastCopyFile: z.file, description: `${z.originalName} (no pattern found)` });
+    }
+
+    // Loose PDFs with no recognizable pattern — bundled together into one catch-all zip.
+    const unmatchedPdfSources = [];
+    for (const lg of looseGroups) {
+      if (lg.looseKey) continue;
+      for (const r of lg.results) {
+        if (r.entry) unmatchedPdfSources.push({ entry: r.entry, name: r.displayPath });
+      }
+    }
+    if (unmatchedPdfSources.length > 0) {
+      let outputName = 'Unmatched_PDFs.zip';
+      while (usedOutputNames.has(outputName)) outputName = outputName.replace(/\.zip$/i, '_extra.zip');
+      usedOutputNames.add(outputName);
+      units.push({
+        outputName,
+        kind: 'rebuild',
+        pdfSources: unmatchedPdfSources,
+        description: `${unmatchedPdfSources.length} loose PDF${unmatchedPdfSources.length === 1 ? '' : 's'} with no recognizable pattern`
+      });
+    }
+
+    return units;
+  }
+
+  // Builds a fresh zip (as an ArrayBuffer) from a flat list of PDF sources,
+  // deduping identical filenames with the "_extra" convention.
+  async function buildRebuiltZipBytes(pdfSources) {
+    const sub = new JSZip();
+    const usedNames = new Set();
+    for (const src of pdfSources) {
+      const name = dedupeFilename(src.name, usedNames);
+      const data = await src.entry.async('arraybuffer');
+      sub.file(name, data);
+    }
+    return sub.generateAsync({ type: 'arraybuffer', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  }
+
+  function renderRenameList() {
+    renameListEl.innerHTML = '';
+
+    const plan = buildExportPlan();
+    if (plan.length === 0) {
+      renameSection.classList.remove('show');
+      return;
+    }
+
+    for (const unit of plan) {
+      const row = document.createElement('div');
+      row.className = 'file-row';
+      row.dataset.search = (unit.outputName + ' ' + unit.description).toLowerCase();
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'file-name';
+      if (unit.kind === 'rebuild') {
+        nameEl.innerHTML = `${unit.description} <span style="color:var(--muted)">→ merged →</span> <strong>${unit.outputName}</strong>`;
+      } else {
+        nameEl.innerHTML = `${unit.description} <span style="color:var(--muted)">→</span> <strong>${unit.outputName}</strong>`;
+      }
+      row.appendChild(nameEl);
+
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'row-download-btn';
+      dlBtn.textContent = 'Download';
+      dlBtn.addEventListener('click', async () => {
+        dlBtn.disabled = true;
+        const original = dlBtn.textContent;
+        dlBtn.textContent = '…';
+        try {
+          let blobSource;
+          if (unit.kind === 'fastcopy') {
+            blobSource = unit.fastCopyFile;
+          } else {
+            const bytes = await buildRebuiltZipBytes(unit.pdfSources);
+            blobSource = new Blob([bytes], { type: 'application/zip' });
+          }
+          const url = URL.createObjectURL(blobSource);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = unit.outputName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          setTimeout(() => URL.revokeObjectURL(url), 4000);
+        } catch (err) {
+          alert('Could not build this zip: ' + err.message);
+        } finally {
+          dlBtn.disabled = false;
+          dlBtn.textContent = original;
+        }
+      });
+      row.appendChild(dlBtn);
+
+      renameListEl.appendChild(row);
+    }
+
+    renameSection.classList.add('show');
+  }
+
+  async function downloadRenamedZips() {
+    const plan = buildExportPlan();
+    if (plan.length === 0) return;
+
+    renameDownloadBtn.disabled = true;
+    const originalText = renameDownloadBtnText.textContent;
+    renameDownloadBtnText.textContent = 'Packing…';
+
+    try {
+      const bundle = new JSZip();
+      for (const unit of plan) {
+        if (unit.kind === 'fastcopy') {
+          const data = await unit.fastCopyFile.arrayBuffer();
+          bundle.file(unit.outputName, data);
+        } else {
+          const bytes = await buildRebuiltZipBytes(unit.pdfSources);
+          bundle.file(unit.outputName, bytes);
+        }
+      }
+
+      const blob = await bundle.generateAsync({ type: 'blob', compression: 'STORE' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'renamed_zips_bundle.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (err) {
+      alert('Could not build the renamed zips bundle: ' + err.message);
+    } finally {
+      renameDownloadBtn.disabled = false;
+      renameDownloadBtnText.textContent = originalText;
+    }
+  }
+
+  async function downloadAllPdfs() {
+    if (allPdfItems.length === 0) return;
+
+    downloadBtn.disabled = true;
+    const originalText = downloadBtnText.textContent;
+    downloadBtnText.textContent = 'Packing…';
+
+    try {
+      const bundle = new JSZip();
+      const usedNames = new Set();
+
+      for (const item of allPdfItems) {
+        // Use just the filename (flattened, no folder structure) so every
+        // PDF from every source zip — nested or not — lands in one flat list.
+        const rawName = item.displayPath.split(' » ').pop().split('/').pop();
+        const name = dedupeFilename(rawName, usedNames);
+
+        const data = await item.entry.async('arraybuffer');
+        bundle.file(name, data);
+      }
+
+      const blob = await bundle.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'all_pdfs_bundle.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch (err) {
+      alert('Could not build the bundled zip: ' + err.message);
+    } finally {
+      downloadBtn.disabled = false;
+      downloadBtnText.textContent = originalText;
+    }
+  }
+</script>
+
+</body>
+</html>
