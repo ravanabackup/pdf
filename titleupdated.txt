@@ -1,0 +1,118 @@
+// ==UserScript==
+// @name         Judicial Record Automation & Cyclic Title Monitor
+// @namespace    http://tampermonkey.net/
+// @version      1.8
+// @description  Automates submission, pre-fills date/location/employee fields, and explicitly recalculates the title by triggering the Submit action every 30 seconds.
+// @author       Priyank Pardesi
+// @match        http://10.145.22.11:8888/verify_weeding_all.php*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const INITIAL_CLICK_DELAY = 1000; // First click after page load (1 second)
+    const REFRESH_CLICK_INTERVAL = 30000; // Re-click submit every 30 seconds
+    const originalTitle = document.title;
+
+    function autoFillForm() {
+        // Get today's date formatted as YYYY-MM-DD for <input type="date">
+        const today = new Date().toISOString().split('T')[0];
+
+        // 1. Fill From Date
+        const fDateInput = document.getElementById('f_date');
+        if (fDateInput) {
+            fDateInput.value = today;
+            fDateInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // 2. Fill To Date
+        const tDateInput = document.getElementById('t_date');
+        if (tDateInput) {
+            tDateInput.value = today;
+            tDateInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // 3. Select Location: CJA (value="2")
+        const locSelect = document.getElementById('loc');
+        if (locSelect) {
+            locSelect.value = "2";
+            locSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // 4. Select Employee Code: 7117 (value="7117")
+        const empSelect = document.getElementById('emp_code');
+        if (empSelect) {
+            empSelect.value = "7117";
+            empSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+
+    function init() {
+        // 0. Auto-fill the required form fields on load
+        autoFillForm();
+
+        // 1. Initial execution of title parser
+        updateTitleWithHighestNumber();
+        
+        // 2. Set up MutationObserver to update the title immediately when the Submit action pulls new data into the DOM
+        const targetNode = document.getElementById('output') || document.body;
+        const observer = new MutationObserver(() => {
+            updateTitleWithHighestNumber();
+        });
+        observer.observe(targetNode, { childList: true, subtree: true });
+
+        // 3. Trigger the very first automated click after initial delay
+        setTimeout(() => {
+            executeSubmitClick();
+        }, INITIAL_CLICK_DELAY);
+
+        // 4. Set up the repeating loop to click the Submit button every 30 seconds
+        setInterval(() => {
+            executeSubmitClick();
+        }, REFRESH_CLICK_INTERVAL);
+    }
+
+    function updateTitleWithHighestNumber() {
+        const labels = Array.from(document.querySelectorAll('label.custom-control-label'));
+        if (labels.length === 0) return;
+
+        let highestValue = -1;
+
+        labels.forEach(el => {
+            const num = parseInt(el.textContent.trim(), 10);
+            if (!isNaN(num) && num > highestValue) {
+                highestValue = num;
+            }
+        });
+
+        if (highestValue !== -1) {
+            document.title = `[T: ${highestValue}] ${originalTitle}`;
+        }
+    }
+
+    function executeSubmitClick() {
+        const submitBtn = document.querySelector('button[name="btn_diary"]');
+        
+        if (submitBtn) {
+            try {
+                // Fire native DOM click
+                submitBtn.click();
+            } catch (e) {
+                // Fallback direct environment function execution if native execution path is blocked
+                if (typeof unsafeWindow !== 'undefined' && typeof unsafeWindow.get_details === 'function') {
+                    unsafeWindow.get_details(4);
+                } else if (typeof window.get_details === 'function') {
+                    window.get_details(4);
+                }
+            }
+        }
+    }
+
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+        init();
+    } else {
+        window.addEventListener('load', init);
+    }
+})();
