@@ -1,0 +1,926 @@
+// ==UserScript==
+// @name         OmniDocs Bulk Case Downloader Pro (With Summary Log)
+// @namespace    http://tampermonkey.net/
+// @version      6.0
+// @description  Bulk download case files with custom ZIP naming and export a text summary report at the end.
+// @author       You
+// @match        http://10.145.22.12:8080/omnidocs/*
+// @match        */omnidocs/*
+// @grant        GM_download
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // ==========================================
+    // CONFIGURATION
+    // ==========================================
+    const CONFIG = {
+        delayBetweenActions: 1500,
+        delayAfterDownload: 3500,
+        delayAfterSearch: 4000,
+        delayBetweenCases: 2000,
+        maxRetries: 3,
+        debug: true
+    };
+
+    let isRunning = false;
+    let totalDownloaded = 0;
+    let completedCasesCount = 0;
+    let currentCaseIndex = 0;
+    let caseList = [];
+    
+    // Array to store download records for the final text report
+    let downloadSummaryReport = [];
+
+    // ==========================================
+    // LOGGING & UI UTILITIES
+    // ==========================================
+    function log(msg) {
+        if (CONFIG.debug) console.log('[OmniDocs Pro]', msg);
+        updateStatus(msg);
+        showToast(msg);
+    }
+
+    function wait(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function showToast(text, duration = 3000) {
+        let toast = document.getElementById('omnidocs-toast');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'omnidocs-toast';
+            toast.style.cssText = `
+                position: fixed;
+                top: 100px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 10001;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: #fff;
+                padding: 12px 24px;
+                border-radius: 25px;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 500;
+                box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+                transition: all 0.3s ease;
+                pointer-events: none;
+                max-width: 500px;
+                text-align: center;
+            `;
+            document.body.appendChild(toast);
+        }
+        toast.innerText = text;
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+        clearTimeout(toast.timeoutId);
+        toast.timeoutId = setTimeout(() => {
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateX(-50%) translateY(-20px)';
+        }, duration);
+    }
+
+    function updateStatus(msg) {
+        const statusEl = document.getElementById('bulk-status');
+        if (statusEl) {
+            statusEl.innerHTML = `<span style="color: #667eea;">●</span> ${msg}`;
+        }
+    }
+
+    function updateProgressUI() {
+        const progressEl = document.getElementById('progress');
+        if (!progressEl) return;
+
+        if (!isRunning) return;
+
+        const currentCase = caseList[currentCaseIndex];
+        const caseText = currentCase ? `${currentCase.type}-${currentCase.number}-${currentCase.year}` : 'Processing...';
+
+        progressEl.innerHTML = `
+            <div style="font-weight: 700; margin-bottom: 4px;">
+                Processing Case ${currentCaseIndex + 1} of ${caseList.length}: <span style="color: #4c51bf;">${caseText}</span>
+            </div>
+            <div style="font-size: 12px; color: #4a5568;">
+                ✅ <strong>Cases Completed:</strong> ${completedCasesCount} / ${caseList.length} | 📁 <strong>Total Files Downloaded:</strong> ${totalDownloaded}
+            </div>
+        `;
+        progressEl.style.color = '#2b6cb0';
+    }
+
+    // ==========================================
+    // SUMMARY FILE EXPORTER
+    // ==========================================
+    function exportSummaryTextFile() {
+        if (downloadSummaryReport.length === 0) return;
+
+        let content = "=========================================\n";
+        content += "     CASE FILE DOWNLOAD SUMMARY REPORT    \n";
+        content += `     Generated: ${new Date().toLocaleString()}\n`;
+        content += "=========================================\n\n";
+
+        downloadSummaryReport.forEach(item => {
+            content += `Case Name: ${item.caseName}\n`;
+            content += `Files Downloaded: ${item.fileCount}\n`;
+            content += "-----------------------------------------\n";
+        });
+
+        content += `\nTotal Cases Processed: ${downloadSummaryReport.length}\n`;
+        content += `Total Files Downloaded: ${totalDownloaded}\n`;
+
+        // Create blob and trigger automatic text file download
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const downloadLink = document.createElement('a');
+        downloadLink.href = URL.createObjectURL(blob);
+        downloadLink.download = `case_summary.txt`;
+        
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        
+        log('📄 Exported download summary report: case_summary.txt');
+    }
+
+    // ==========================================
+    // INTELLIGENT ELEMENT FINDERS
+    // ==========================================
+    async function findElementWithRetry(selectors, description, maxAttempts = CONFIG.maxRetries) {
+        for (let i = 0; i < maxAttempts; i++) {
+            for (const selector of selectors) {
+                let el;
+                if (typeof selector === 'function') {
+                    el = selector();
+                } else {
+                    try {
+                        el = document.querySelector(selector);
+                    } catch (e) {
+                        el = null;
+                    }
+                }
+                if (el && el.offsetParent !== null) {
+                    return el;
+                }
+            }
+            if (i < maxAttempts - 1) {
+                await wait(1000);
+            }
+        }
+        return null;
+    }
+
+    function findExactTextElement(text) {
+        const all = document.querySelectorAll('*');
+        for (const el of all) {
+            if (el.children.length === 0 && el.textContent.trim() === text) {
+                return el;
+            }
+        }
+        return null;
+    }
+
+    function findInputNearLabel(labelText, { pickLast = false, maxDepth = 6 } = {}) {
+        const label = findExactTextElement(labelText);
+        if (!label) return null;
+
+        let container = label.parentElement;
+        for (let depth = 0; depth < maxDepth && container; depth++) {
+            const inputs = container.querySelectorAll('input, textarea');
+            if (inputs.length > 0) {
+                return pickLast ? inputs[inputs.length - 1] : inputs[0];
+            }
+            container = container.parentElement;
+        }
+        return null;
+    }
+
+    async function findSearchCaseTypeInput() {
+        return await findElementWithRetry([() => findInputNearLabel('CASE_TYPE')], 'CASE_TYPE input');
+    }
+
+    async function findSearchCaseNoInput() {
+        return await findElementWithRetry([() => findInputNearLabel('CASE_NO')], 'CASE_NO input');
+    }
+
+    async function findSearchCaseYearInput() {
+        return await findElementWithRetry([() => findInputNearLabel('CASE_YEAR', { pickLast: true })], 'CASE_YEAR input');
+    }
+
+    async function findSearchButton() {
+        return await findElementWithRetry([
+            'button[ref="e12"]',
+            () => {
+                const buttons = document.querySelectorAll('button');
+                for (let btn of buttons) {
+                    if (btn.textContent.trim().toLowerCase() === 'search') return btn;
+                }
+                return null;
+            },
+            'button[type="submit"]'
+        ], 'Search button');
+    }
+
+    async function findClearAllButton() {
+        return await findElementWithRetry([
+            'button[ref="e11"]',
+            () => {
+                const buttons = document.querySelectorAll('button');
+                for (let btn of buttons) {
+                    if (btn.textContent.trim().toLowerCase().includes('clear')) return btn;
+                }
+                return null;
+            }
+        ], 'Clear All button');
+    }
+
+    function findSelectAllCheckbox() {
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+        for (let cb of checkboxes) {
+            const label = cb.getAttribute('aria-label') || cb.textContent;
+            if (label && label.toLowerCase().includes('select all')) return cb;
+        }
+        const headerCheckbox = document.querySelector('table thead input[type="checkbox"], th input[type="checkbox"]');
+        if (headerCheckbox) return headerCheckbox;
+
+        for (let cb of checkboxes) {
+            const cell = cb.closest('td, th');
+            if (cell && cell.textContent.toLowerCase().includes('select all')) return cb;
+        }
+        return null;
+    }
+
+    function findDownloadButton() {
+        const buttons = document.querySelectorAll('button');
+        for (let btn of buttons) {
+            const text = btn.textContent.toLowerCase();
+            const aria = (btn.getAttribute('aria-label') || '').toLowerCase();
+            if (text.includes('download') || aria.includes('download')) return btn;
+        }
+        return null;
+    }
+
+    function findModifySearchButton() {
+        const imgMatch = document.querySelector('img[alt*="Modify" i], img[alt*="Search" i], [title*="Modify" i], [title*="Search" i]');
+        if (imgMatch) {
+            return imgMatch.closest('a, button, [role="button"], div, span') || imgMatch;
+        }
+
+        const candidates = document.querySelectorAll('button, a, div[role="button"], span[role="button"], input[type="button"]');
+        for (let el of candidates) {
+            const text = (el.textContent || el.value || '').trim().toLowerCase();
+            if (
+                text.includes('modify search') || 
+                text.includes('search again') || 
+                text.includes('new search') || 
+                text.includes('back to search') || 
+                text === 'modify' ||
+                text === 'back'
+            ) {
+                return el;
+            }
+        }
+        return null;
+    }
+
+    function findNextBatchButton() {
+        const buttons = document.querySelectorAll('button');
+        for (let btn of buttons) {
+            const ariaLabel = btn.getAttribute('aria-label') || '';
+            const title = btn.getAttribute('title') || '';
+            if (ariaLabel.toLowerCase().includes('next batch') ||
+                title.toLowerCase().includes('next batch') ||
+                btn.textContent.toLowerCase().includes('next')) {
+                if (!btn.disabled) return btn;
+            }
+        }
+        const images = document.querySelectorAll('img[alt*="Next Batch"]');
+        if (images.length > 0) {
+            const btn = images[0].closest('button');
+            if (btn && !btn.disabled) return btn;
+        }
+        return null;
+    }
+
+    function findRemoveSelectionButton() {
+        const images = document.querySelectorAll('img[alt*="Remove selection"], img[title*="Remove selection"]');
+        if (images.length > 0) {
+            return images[0].closest('button') || images[0].parentElement;
+        }
+        const buttons = document.querySelectorAll('button, div[role="button"]');
+        for (let btn of buttons) {
+            if (btn.textContent.toLowerCase().includes('remove selection') ||
+                btn.innerHTML.toLowerCase().includes('remove selection')) {
+                return btn;
+            }
+        }
+        return null;
+    }
+
+    function getItemsCount() {
+        return document.querySelectorAll('table tbody tr').length;
+    }
+
+    function getCheckboxCount() {
+        return document.querySelectorAll('input[type="checkbox"]').length;
+    }
+
+    function getSelectedCount() {
+        const selectedText = document.body.innerText.match(/(\d+)\s*Items?\s*Selected/i);
+        if (selectedText) {
+            return parseInt(selectedText[1]);
+        }
+        return document.querySelectorAll('table tbody input[type="checkbox"]:checked').length;
+    }
+
+    // ==========================================
+    // CASE PARSING
+    // ==========================================
+    function parseCaseNumber(caseStr) {
+        const cleanStr = caseStr.trim().toUpperCase().replace(/\s+/g, '-');
+        
+        let match = cleanStr.match(/^([A-Z]+)[\s\-_]+(\d+)[\s\-_]+(\d{4})$/);
+        if (match) {
+            return { type: match[1], number: match[2], year: match[3], original: caseStr.trim() };
+        }
+        
+        match = cleanStr.match(/^([A-Z]+)[\s\-_]+(\d+)$/);
+        if (match) {
+            const currentYear = new Date().getFullYear();
+            return { 
+                type: match[1], 
+                number: match[2], 
+                year: currentYear.toString(), 
+                original: caseStr.trim(),
+                yearAutoFilled: true
+            };
+        }
+        
+        return null;
+    }
+
+    function getCaseFilename(caseData, pageNum, hasMultiplePages) {
+        const caseName = `${caseData.type}-${caseData.number}-${caseData.year}`;
+        if (hasMultiplePages) {
+            return `${caseName} (${pageNum}).zip`;
+        }
+        return `${caseName}.zip`;
+    }
+
+    // ==========================================
+    // SEARCH & DOWNLOAD OPERATIONS
+    // ==========================================
+    async function ensureSearchForm() {
+        const typeInput = await findSearchCaseTypeInput();
+        if (typeInput && typeInput.offsetParent !== null) {
+            return;
+        }
+
+        log('Navigating back to search form...');
+        const modifyBtn = findModifySearchButton();
+        if (modifyBtn) {
+            modifyBtn.click();
+            await wait(2500);
+        } else {
+            window.history.back();
+            await wait(2500);
+        }
+
+        let retries = 0;
+        while (retries < 3) {
+            const input = await findSearchCaseTypeInput();
+            if (input && input.offsetParent !== null) break;
+            await wait(1000);
+            retries++;
+        }
+    }
+
+    async function clearSearchFields() {
+        const clearBtn = await findClearAllButton();
+        if (clearBtn) {
+            clearBtn.click();
+            await wait(1000);
+        }
+        
+        const typeInput = await findSearchCaseTypeInput();
+        const noInput = await findSearchCaseNoInput();
+        const yearInput = await findSearchCaseYearInput();
+        
+        [typeInput, noInput, yearInput].forEach(input => {
+            if (input) {
+                input.value = '';
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        });
+        
+        await wait(500);
+    }
+
+    async function setInputValue(input, value) {
+        if (!input) return false;
+        
+        input.focus();
+        input.click();
+        await wait(100);
+        
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        await wait(100);
+        
+        input.value = value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        
+        const tracker = input.getAttribute('ng-model') || input.getAttribute('data-ng-model');
+        if (tracker && window.angular) {
+            const scope = window.angular.element(input).scope();
+            if (scope) scope.$apply();
+        }
+        
+        return true;
+    }
+
+    async function performSearch(caseData) {
+        log(`🔍 Searching: ${caseData.type}-${caseData.number}-${caseData.year}`);
+        
+        await ensureSearchForm();
+        await clearSearchFields();
+        
+        const typeInput = await findSearchCaseTypeInput();
+        const noInput = await findSearchCaseNoInput();
+        const yearInput = await findSearchCaseYearInput();
+        const searchBtn = await findSearchButton();
+        
+        if (!typeInput || !noInput || !yearInput) {
+            throw new Error(`Cannot locate search input fields on page.`);
+        }
+        
+        await setInputValue(typeInput, caseData.type);
+        await wait(300);
+        await setInputValue(noInput, caseData.number);
+        await wait(300);
+        await setInputValue(yearInput, caseData.year);
+        await wait(500);
+        
+        if (searchBtn) {
+            searchBtn.click();
+        } else {
+            noInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        }
+        
+        await wait(CONFIG.delayAfterSearch);
+        
+        let attempts = 0;
+        while (attempts < 5 && !document.querySelector('table tbody tr, .no-results')) {
+            await wait(1000);
+            attempts++;
+        }
+    }
+
+    async function handleSingleFileDownload(targetFilename) {
+        const moreActionsBtn = document.querySelector('a[title="More Actions"]') || 
+                               document.querySelector('a[id^="moreActionsdropdownLabel_List_Document_"]');
+        
+        if (moreActionsBtn) {
+            moreActionsBtn.click();
+            log('Opening single file menu...');
+            await wait(800);
+
+            const options = document.querySelectorAll('div.action-text, [id^="list-view-Download-"]');
+            for (let opt of options) {
+                if (opt.textContent.trim().toLowerCase() === 'download') {
+                    opt.click();
+                    log(`📥 Triggered download as: ${targetFilename}`);
+                    totalDownloaded += 1;
+                    updateProgressUI();
+                    await wait(CONFIG.delayAfterDownload);
+                    return 1;
+                }
+            }
+        }
+        return 0;
+    }
+
+    async function downloadCurrentPage(caseData, pageNum, hasMultiplePages) {
+        const itemsCount = getItemsCount();
+        const totalCheckboxes = getCheckboxCount();
+        const targetFilename = getCaseFilename(caseData, pageNum, hasMultiplePages);
+        
+        if (itemsCount === 0) return 0;
+
+        if (itemsCount === 1 || totalCheckboxes <= 2) {
+            const singleDownloaded = await handleSingleFileDownload(targetFilename);
+            if (singleDownloaded > 0) return singleDownloaded;
+        }
+
+        const selectAllCheckbox = findSelectAllCheckbox();
+        if (!selectAllCheckbox) {
+            return await handleSingleFileDownload(targetFilename);
+        }
+
+        if (!selectAllCheckbox.checked) {
+            selectAllCheckbox.click();
+            await wait(CONFIG.delayBetweenActions);
+        }
+
+        const selectedCount = getSelectedCount();
+        if (selectedCount === 0) return 0;
+
+        const downloadBtn = findDownloadButton();
+        if (downloadBtn) {
+            downloadBtn.click();
+            log(`📥 Download triggered for ${targetFilename}`);
+            totalDownloaded += selectedCount;
+            updateProgressUI();
+            await wait(CONFIG.delayAfterDownload);
+        } else {
+            return await handleSingleFileDownload(targetFilename);
+        }
+
+        const removeBtn = findRemoveSelectionButton();
+        if (removeBtn) {
+            removeBtn.click();
+            await wait(CONFIG.delayBetweenActions);
+        } else if (selectAllCheckbox.checked) {
+            selectAllCheckbox.click();
+            await wait(CONFIG.delayBetweenActions);
+        }
+
+        return selectedCount;
+    }
+
+    async function goToNextPage() {
+        const nextBtn = findNextBatchButton();
+        if (nextBtn) {
+            nextBtn.click();
+            log('➡️ Going to next page batch...');
+            await wait(CONFIG.delayBetweenActions * 2);
+            return true;
+        }
+        return false;
+    }
+
+    async function processCase(caseData) {
+        const caseNameFormatted = `${caseData.type}-${caseData.number}-${caseData.year}`;
+        let caseDownloadedCount = 0;
+
+        try {
+            await performSearch(caseData);
+            let pageNum = 1;
+
+            const hasNextBatchInitially = !!findNextBatchButton();
+
+            while (true) {
+                const targetName = getCaseFilename(caseData, pageNum, hasNextBatchInitially || pageNum > 1);
+                log(`📄 Downloading Page ${pageNum} for ${caseData.original} as: ${targetName}`);
+                
+                const downloadedOnPage = await downloadCurrentPage(caseData, pageNum, hasNextBatchInitially || pageNum > 1);
+                caseDownloadedCount += downloadedOnPage;
+
+                const hasNextPage = await goToNextPage();
+                if (!hasNextPage) break;
+                
+                pageNum++;
+            }
+
+            // Record into summary report list
+            downloadSummaryReport.push({
+                caseName: caseNameFormatted,
+                fileCount: caseDownloadedCount
+            });
+
+            completedCasesCount++;
+            updateProgressUI();
+            log(`✅ Completed ${caseData.original} (${caseDownloadedCount} files)`);
+            return caseDownloadedCount;
+        } catch (err) {
+            log(`❌ Error processing ${caseData.original}: ${err.message}`);
+            
+            // Record failed or 0-file case in report
+            downloadSummaryReport.push({
+                caseName: caseNameFormatted,
+                fileCount: 0
+            });
+
+            completedCasesCount++;
+            updateProgressUI();
+            return 0;
+        }
+    }
+
+    // ==========================================
+    // MAIN BULK PROCESS
+    // ==========================================
+    async function startBulkDownload() {
+        const inputEl = document.getElementById('case-input');
+        const startBtn = document.getElementById('start-btn');
+        const progressEl = document.getElementById('progress');
+        
+        const rawInput = inputEl.value;
+        if (!rawInput.trim()) {
+            alert('Please enter at least one case number');
+            return;
+        }
+        
+        const cases = rawInput
+            .split(/[\n,;]+/)
+            .map(s => s.trim())
+            .filter(s => s.length > 0)
+            .map(parseCaseNumber)
+            .filter(c => c !== null);
+        
+        if (cases.length === 0) {
+            alert('No valid cases found!');
+            return;
+        }
+        
+        if (!confirm(`Download ${cases.length} case(s)?\n${cases.map(c => `• ${c.original}`).join('\n')}`)) {
+            return;
+        }
+        
+        isRunning = true;
+        caseList = cases;
+        totalDownloaded = 0;
+        completedCasesCount = 0;
+        downloadSummaryReport = []; // Reset summary report array
+        
+        startBtn.disabled = true;
+        startBtn.textContent = '⏳ Downloading...';
+        inputEl.disabled = true;
+        
+        log(`=== Starting Bulk Download: ${cases.length} cases ===`);
+        
+        for (let i = 0; i < cases.length; i++) {
+            currentCaseIndex = i;
+            updateProgressUI();
+            
+            await processCase(cases[i]);
+            
+            if (i < cases.length - 1) {
+                await wait(CONFIG.delayBetweenCases);
+            }
+        }
+        
+        progressEl.innerHTML = `
+            <div style="font-weight: 700; color: #38a169;">✅ BULK DOWNLOAD COMPLETE!</div>
+            <div style="font-size: 13px; color: #2d3748; margin-top: 4px;">
+                Successfully processed <strong>${completedCasesCount} of ${cases.length}</strong> cases.<br>
+                Total downloaded files: <strong>${totalDownloaded}</strong>
+            </div>
+        `;
+        
+        log(`🎉 COMPLETE! Downloaded ${totalDownloaded} file(s) across ${cases.length} case(s)`);
+        
+        // Export the text report summary file automatically
+        exportSummaryTextFile();
+
+        isRunning = false;
+        startBtn.disabled = false;
+        startBtn.textContent = '📥 Start Download';
+        inputEl.disabled = false;
+    }
+
+    // ==========================================
+    // UI CREATION
+    // ==========================================
+    function createUI() {
+        const container = document.createElement('div');
+        container.id = 'omnidocs-bulk-panel';
+        container.style.cssText = `
+            position: fixed;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 9999;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 20px;
+            width: 550px;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            border: 1px solid #e2e8f0;
+        `;
+        
+        const header = document.createElement('div');
+        header.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e2e8f0;
+        `;
+        header.innerHTML = `
+            <span style="font-size: 24px;">📦</span>
+            <div>
+                <div style="font-size: 18px; font-weight: 700; color: #1a202c;">Bulk Case Downloader</div>
+                <div style="font-size: 12px; color: #718096;">Auto-renaming files & exporting case_summary.txt</div>
+            </div>
+            <button id="toggle-panel" style="
+                margin-left: auto;
+                background: #edf2f7;
+                border: none;
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                cursor: pointer;
+                font-size: 16px;
+                color: #4a5568;
+            ">−</button>
+        `;
+        
+        const content = document.createElement('div');
+        content.id = 'panel-content';
+        
+        const status = document.createElement('div');
+        status.id = 'bulk-status';
+        status.style.cssText = `
+            background: #f7fafc;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            color: #4a5568;
+        `;
+        status.innerHTML = '<span style="color: #48bb78;">●</span> Ready to download';
+        
+        const inputArea = document.createElement('div');
+        inputArea.style.cssText = 'margin-bottom: 15px;';
+        inputArea.innerHTML = `
+            <label style="display: block; font-size: 13px; font-weight: 600; color: #2d3748; margin-bottom: 6px;">
+                Case Numbers <span style="font-weight: normal; color: #718096;">(one per line or comma-separated)</span>
+            </label>
+            <textarea id="case-input" placeholder="CWP-2635-2020&#10;CRWP-1762-2018&#10;CRA-4521-2019" style="
+                width: 100%;
+                min-height: 100px;
+                padding: 12px;
+                border: 2px solid #e2e8f0;
+                border-radius: 10px;
+                font-size: 14px;
+                font-family: 'Monaco', 'Consolas', monospace;
+                resize: vertical;
+                box-sizing: border-box;
+                outline: none;
+                transition: border-color 0.2s;
+            " onfocus="this.style.borderColor='#667eea'" onblur="this.style.borderColor='#e2e8f0'"></textarea>
+        `;
+        
+        const buttonArea = document.createElement('div');
+        buttonArea.style.cssText = `
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        `;
+        buttonArea.innerHTML = `
+            <button id="start-btn" style="
+                flex: 1;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 10px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(102, 126, 234, 0.5)'" 
+            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(102, 126, 234, 0.4)'">
+                📥 Start Download
+            </button>
+            <button id="clear-btn" style="
+                background: #edf2f7;
+                color: #4a5568;
+                border: none;
+                padding: 12px 20px;
+                border-radius: 10px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s;
+            " onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#edf2f7'">
+                Clear
+            </button>
+        `;
+        
+        const progress = document.createElement('div');
+        progress.id = 'progress';
+        progress.style.cssText = `
+            background: #ebf8ff;
+            padding: 12px 15px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #2b6cb0;
+            border-left: 4px solid #4299e1;
+        `;
+        progress.innerHTML = 'Enter case numbers above and click Start Download';
+        
+        const help = document.createElement('div');
+        help.style.cssText = `
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e2e8f0;
+            font-size: 11px;
+            color: #718096;
+            line-height: 1.5;
+        `;
+        help.innerHTML = `
+            <strong>Naming Rules:</strong> Single page = <code>CWP-2635-2020.zip</code> | Multi-page = <code>CWP-2635-2020 (1).zip</code><br>
+            <strong>Summary:</strong> Generates <code>case_summary.txt</code> automatically after completion.
+        `;
+        
+        content.appendChild(status);
+        content.appendChild(inputArea);
+        content.appendChild(buttonArea);
+        content.appendChild(progress);
+        content.appendChild(help);
+        container.appendChild(header);
+        container.appendChild(content);
+        document.body.appendChild(container);
+        
+        document.getElementById('start-btn').onclick = startBulkDownload;
+        document.getElementById('clear-btn').onclick = () => {
+            document.getElementById('case-input').value = '';
+            document.getElementById('progress').innerHTML = 'Enter case numbers above and click Start Download';
+            document.getElementById('progress').style.color = '#2b6cb0';
+        };
+        
+        let isMinimized = false;
+        document.getElementById('toggle-panel').onclick = function() {
+            isMinimized = !isMinimized;
+            const content = document.getElementById('panel-content');
+            if (isMinimized) {
+                content.style.display = 'none';
+                this.textContent = '+';
+                container.style.width = '320px';
+            } else {
+                content.style.display = 'block';
+                this.textContent = '−';
+                container.style.width = '550px';
+            }
+        };
+        
+        let isDragging = false;
+        let startX, startY, startLeft, startTop;
+        
+        header.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            const rect = container.getBoundingClientRect();
+            startLeft = rect.left;
+            startTop = rect.top;
+            container.style.transform = 'none';
+            container.style.left = startLeft + 'px';
+            container.style.top = startTop + 'px';
+            container.style.cursor = 'grabbing';
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            container.style.left = (startLeft + dx) + 'px';
+            container.style.top = (startTop + dy) + 'px';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            isDragging = false;
+            container.style.cursor = 'default';
+        });
+    }
+
+    // ==========================================
+    // INITIALIZATION
+    // ==========================================
+    function init() {
+        createUI();
+        log('OmniDocs Bulk Downloader Pro loaded');
+        
+        document.addEventListener('keydown', (e) => {
+            if (e.altKey && e.key === 'b') {
+                e.preventDefault();
+                const panel = document.getElementById('omnidocs-bulk-panel');
+                if (panel) {
+                    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+                }
+            }
+            if (e.altKey && e.key === 's') {
+                e.preventDefault();
+                if (!isRunning) startBulkDownload();
+            }
+        });
+        
+        setTimeout(() => {
+            showToast('OmniDocs Bulk Downloader ready! Press Alt+B to toggle', 5000);
+        }, 2000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+})();
