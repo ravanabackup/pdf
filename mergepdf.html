@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PDFMerge — Combine PDF files online, free & private</title>
+<meta name="description" content="Merge PDF files in the order you want. Reorder, rotate, choose page ranges, add page numbers, watermarks and more — 100% in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<style type="text/tailwindcss">
+  @custom-variant dark (&:where(.dark, .dark *));
+  @theme {
+    --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --color-brand-50: #fff1f0;
+    --color-brand-100: #ffe0de;
+    --color-brand-200: #ffc6c2;
+    --color-brand-300: #ff9d97;
+    --color-brand-400: #ff645b;
+    --color-brand-500: #f5372d;
+    --color-brand-600: #e11d13;
+    --color-brand-700: #bd150d;
+    --color-brand-800: #9c1610;
+    --color-brand-900: #811914;
+  }
+  .opt-chip { @apply px-2 py-2 rounded-lg text-xs sm:text-sm font-semibold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 hover:border-brand-300 transition; }
+  .opt-chip.active { @apply bg-brand-50 border-brand-500 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300; }
+  .pos-btn { @apply rounded bg-slate-100 dark:bg-slate-800 hover:bg-brand-200 transition; }
+  .pos-btn.active { @apply bg-brand-500; }
+  .quick-chip { @apply px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-brand-50 hover:text-brand-700 dark:hover:bg-brand-500/15 transition; }
+  .mode-btn.active { @apply bg-white dark:bg-slate-950 shadow-sm text-slate-900 dark:text-white; }
+  .mode-btn:not(.active) { @apply text-slate-500 dark:text-slate-400; }
+  .icon-btn { @apply grid place-items-center w-8 h-8 rounded-lg bg-white/95 dark:bg-slate-800/95 text-slate-700 dark:text-slate-200 shadow-md hover:bg-brand-500 hover:text-white transition backdrop-blur; }
+</style>
+<style>
+  html { -webkit-tap-highlight-color: transparent; }
+  body { font-feature-settings: "cv11", "ss01"; }
+  img:not([src]) { visibility: hidden; }
+  .bg-grid {
+    background-image: radial-gradient(circle at 1px 1px, rgba(100,116,139,.18) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+  .blob { filter: blur(70px); opacity: .55; }
+  .dark .blob { opacity: .28; }
+  /* Switch */
+  .switch { position: relative; display: inline-flex; flex-shrink: 0; width: 42px; height: 24px; }
+  .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; z-index: 2; }
+  .switch .track { position: absolute; inset: 0; border-radius: 999px; background: #cbd5e1; transition: background .2s; }
+  .dark .switch .track { background: #475569; }
+  .switch .thumb { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .2s cubic-bezier(.4,0,.2,1); }
+  .switch input:checked ~ .track { background: var(--color-brand-500); }
+  .switch input:checked ~ .thumb { transform: translateX(18px); }
+  .switch input:focus-visible ~ .track { outline: 2px solid var(--color-brand-400); outline-offset: 2px; }
+  /* Sortable */
+  .sortable-ghost { opacity: .35; }
+  .sortable-ghost > div:first-child { outline: 2px dashed var(--color-brand-500); outline-offset: 3px; }
+  .sortable-chosen { cursor: grabbing; }
+  .sortable-drag { transform: rotate(2deg); }
+  /* Details */
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] .chev { transform: rotate(180deg); }
+  /* scrollbars */
+  .nice-scroll::-webkit-scrollbar { width: 8px; }
+  .nice-scroll::-webkit-scrollbar-thumb { background: rgba(148,163,184,.4); border-radius: 8px; }
+  /* Mobile bottom sheet sidebar */
+  @media (max-width: 1023px) {
+    #sidebar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 70; max-height: 88vh; transform: translateY(105%); transition: transform .35s cubic-bezier(.32,.72,0,1); border-radius: 24px 24px 0 0; }
+    #sidebar.open { transform: translateY(0); }
+  }
+  @keyframes pop { 0% { transform: scale(.6); opacity: 0 } 60% { transform: scale(1.08); opacity: 1 } 100% { transform: scale(1) } }
+  .pop { animation: pop .5s cubic-bezier(.2,.9,.3,1.2) both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: none } }
+  .fade-up { animation: fadeUp .45s ease both; }
+  @keyframes shimmer { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+  .skeleton { background: linear-gradient(90deg, rgba(148,163,184,.15) 25%, rgba(148,163,184,.3) 50%, rgba(148,163,184,.15) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; }
+  @keyframes draw { to { stroke-dashoffset: 0 } }
+  .draw { stroke-dasharray: 40; stroke-dashoffset: 40; animation: draw .6s .35s ease forwards; }
+  .card-lift { transition: transform .2s ease, box-shadow .2s ease; }
+  @media (hover: hover) { .card-lift:hover { transform: translateY(-3px); } }
+  input[type=range] { accent-color: var(--color-brand-500); }
+</style>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+  (function(){ const t = localStorage.getItem('theme'); if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.classList.add('dark'); })();
+</script>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 antialiased selection:bg-brand-200 selection:text-brand-900">
+
+<!-- Background decoration -->
+<div class="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+  <div class="absolute inset-0 bg-grid"></div>
+  <div class="blob absolute -top-40 -left-32 w-[480px] h-[480px] rounded-full bg-brand-300"></div>
+  <div class="blob absolute top-1/3 -right-40 w-[520px] h-[520px] rounded-full bg-orange-200 dark:bg-fuchsia-700"></div>
+</div>
+
+<!-- Header -->
+<header class="sticky top-0 z-50 backdrop-blur-xl bg-white/70 dark:bg-slate-950/70 border-b border-slate-200/70 dark:border-slate-800/70">
+  <div class="max-w-[1600px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+    <a href="#" id="logoLink" class="flex items-center gap-2.5 group">
+      <span class="grid place-items-center w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-orange-500 text-white shadow-lg shadow-brand-500/30 group-hover:scale-105 transition">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 6 4-4 4 4"/><path d="M12 2v10.3a4 4 0 0 1-1.172 2.872L4 22"/><path d="m20 22-5-5"/></svg>
+      </span>
+      <span class="font-extrabold text-lg tracking-tight">PDF<span class="text-brand-500">Merge</span></span>
+    </a>
+    <div class="flex items-center gap-2 sm:gap-3">
+      <span class="hidden md:inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-500/20">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+        Files never leave your device
+      </span>
+      <button id="themeBtn" class="grid place-items-center w-10 h-10 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition" aria-label="Toggle theme">
+        <svg class="w-5 h-5 dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+        <svg class="w-5 h-5 hidden dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2m-7.07-2.93 1.41-1.41m11.32-11.32 1.41-1.41M2 12h2m16 0h2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<input type="file" id="fileInput" accept="application/pdf,.pdf" multiple class="hidden">
+
+<!-- ================= UPLOAD SCREEN ================= -->
+<main id="uploadScreen" class="px-4 sm:px-6">
+  <section class="max-w-5xl mx-auto pt-12 sm:pt-20 pb-10 text-center fade-up">
+    <span class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-500/10 border border-brand-100 dark:border-brand-500/20 rounded-full px-3 py-1 mb-5">
+      <span class="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse"></span> Free · No sign-up · No upload
+    </span>
+    <h1 class="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05]">
+      Merge <span class="bg-gradient-to-r from-brand-500 via-rose-500 to-orange-500 bg-clip-text text-transparent">PDF files</span>
+    </h1>
+    <p class="mt-5 text-base sm:text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
+      Combine PDFs in the order you want with the easiest PDF merger available. Reorder files or individual pages, rotate, choose page ranges, add page numbers and watermarks. Everything runs in your browser.
+    </p>
+
+    <div id="dropZone" class="mt-10 relative rounded-3xl border-2 border-dashed border-slate-300 dark:border-slate-700 bg-white/70 dark:bg-slate-900/60 backdrop-blur p-8 sm:p-14 transition hover:border-brand-400 hover:bg-brand-50/40 dark:hover:bg-brand-500/5">
+      <div class="mx-auto w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-brand-500 to-orange-500 grid place-items-center text-white shadow-xl shadow-brand-500/30 mb-6">
+        <svg class="w-8 h-8 sm:w-10 sm:h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+      </div>
+      <button id="selectBtn" class="inline-flex items-center justify-center gap-3 w-full sm:w-auto px-8 sm:px-12 py-4 sm:py-5 rounded-2xl bg-brand-500 hover:bg-brand-600 active:scale-[.98] text-white text-lg sm:text-xl font-bold shadow-xl shadow-brand-500/30 transition">
+        Select PDF files
+      </button>
+      <p class="mt-4 text-sm text-slate-500 dark:text-slate-400">or drop PDFs here</p>
+    </div>
+  </section>
+
+  <section class="max-w-6xl mx-auto pb-16">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="card-lift p-6 rounded-2xl bg-white/80 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+        <div class="w-11 h-11 rounded-xl grid place-items-center bg-brand-50 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400 mb-4">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        </div>
+        <h3 class="font-bold">Drag & drop ordering</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Drag files or single pages into any order. Sort by name, size or date.</p>
+      </div>
+      <div class="card-lift p-6 rounded-2xl bg-white/80 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+        <div class="w-11 h-11 rounded-xl grid place-items-center bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400 mb-4">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+        </div>
+        <h3 class="font-bold">Edit pages</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Rotate, delete or pick page ranges like <code class="text-xs px-1 rounded bg-slate-100 dark:bg-slate-800">1-3, 7</code> for each file.</p>
+      </div>
+      <div class="card-lift p-6 rounded-2xl bg-white/80 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+        <div class="w-11 h-11 rounded-xl grid place-items-center bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400 mb-4">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/></svg>
+        </div>
+        <h3 class="font-bold">Lots of options</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Set page size and margins, add page numbers, watermarks, blank pages and document info.</p>
+      </div>
+      <div class="card-lift p-6 rounded-2xl bg-white/80 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+        <div class="w-11 h-11 rounded-xl grid place-items-center bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400 mb-4">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+        </div>
+        <h3 class="font-bold">100% private</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Files are processed on your device. Nothing is uploaded to a server.</p>
+      </div>
+    </div>
+
+    <div class="mt-14 grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+      <div class="flex gap-4"><span class="shrink-0 w-10 h-10 rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900 grid place-items-center font-bold">1</span><div><h4 class="font-semibold">Add your PDFs</h4><p class="text-sm text-slate-500 dark:text-slate-400">Choose files or drop them anywhere on the page.</p></div></div>
+      <div class="flex gap-4"><span class="shrink-0 w-10 h-10 rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900 grid place-items-center font-bold">2</span><div><h4 class="font-semibold">Arrange & customise</h4><p class="text-sm text-slate-500 dark:text-slate-400">Reorder, rotate, pick pages and set your options.</p></div></div>
+      <div class="flex gap-4"><span class="shrink-0 w-10 h-10 rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900 grid place-items-center font-bold">3</span><div><h4 class="font-semibold">Merge & download</h4><p class="text-sm text-slate-500 dark:text-slate-400">Get your combined PDF in seconds.</p></div></div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= WORKSPACE ================= -->
+<main id="workspace" class="hidden">
+  <div class="max-w-[1600px] mx-auto px-3 sm:px-6 py-5 sm:py-8 pb-32 lg:pb-10 flex flex-col lg:flex-row gap-6 items-start">
+    <!-- Main area -->
+    <section class="flex-1 min-w-0 w-full">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <div class="flex items-center gap-3 flex-wrap">
+          <div class="inline-flex p-1 rounded-xl bg-slate-200/70 dark:bg-slate-800/80" role="tablist">
+            <button data-mode="files" class="mode-btn px-3.5 sm:px-4 py-2 rounded-lg text-sm font-semibold transition">Files</button>
+            <button data-mode="pages" class="mode-btn px-3.5 sm:px-4 py-2 rounded-lg text-sm font-semibold transition">Pages</button>
+          </div>
+          <div id="stats" class="text-sm text-slate-500 dark:text-slate-400 font-medium"></div>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="relative">
+            <select id="sortSel" class="appearance-none pl-9 pr-8 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-brand-400 cursor-pointer">
+              <option value="">Sort</option>
+              <option value="name-asc">Name A → Z</option>
+              <option value="name-desc">Name Z → A</option>
+              <option value="size-asc">Size: smallest</option>
+              <option value="size-desc">Size: largest</option>
+              <option value="date-new">Modified: newest</option>
+              <option value="date-old">Modified: oldest</option>
+              <option value="reverse">Reverse order</option>
+            </select>
+            <svg class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 16 4 4 4-4"/><path d="M7 20V4"/><path d="m21 8-4-4-4 4"/><path d="M17 4v16"/></svg>
+            <svg class="w-4 h-4 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <button id="resetPagesBtn" class="hidden px-3 py-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-sm font-medium hover:border-brand-400 transition" title="Rebuild pages from files">Reset</button>
+          <button id="addMoreBtn" class="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 text-sm font-semibold hover:opacity-90 active:scale-[.97] transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span class="hidden sm:inline">Add files</span>
+          </button>
+          <button id="clearBtn" class="grid place-items-center w-10 h-10 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 hover:text-brand-600 hover:border-brand-300 transition" title="Remove all">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="selBar" class="hidden mb-4 flex flex-wrap items-center gap-2 p-2 pl-4 rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-lg fade-up">
+        <span id="selCount" class="text-sm font-semibold mr-auto"></span>
+        <button data-bulk="all" class="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/10 dark:hover:bg-slate-900/10">Select all</button>
+        <button data-bulk="rotl" class="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/10 dark:hover:bg-slate-900/10">↺ Rotate</button>
+        <button data-bulk="rotr" class="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/10 dark:hover:bg-slate-900/10">↻ Rotate</button>
+        <button data-bulk="del" class="px-3 py-1.5 rounded-lg text-sm font-semibold bg-brand-500 text-white hover:bg-brand-600">Delete</button>
+        <button data-bulk="clear" class="px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-white/10 dark:hover:bg-slate-900/10">Cancel</button>
+      </div>
+
+      <p id="hint" class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mb-4 flex items-center gap-2">
+        <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+        <span id="hintText"></span>
+      </p>
+
+      <div id="grid" class="grid gap-3 sm:gap-5"></div>
+    </section>
+
+    <!-- Backdrop for mobile sheet -->
+    <div id="sheetBackdrop" class="lg:hidden fixed inset-0 z-[65] bg-slate-950/50 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="w-full lg:w-[370px] shrink-0 lg:sticky lg:top-24 bg-white dark:bg-slate-900 lg:rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl lg:shadow-xl shadow-slate-900/10 flex flex-col lg:max-h-[calc(100vh-7.5rem)]">
+      <div class="lg:hidden flex justify-center pt-3"><span class="w-10 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700"></span></div>
+      <div class="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100 dark:border-slate-800">
+        <h2 class="text-lg font-extrabold tracking-tight">Merge options</h2>
+        <button id="closeSheet" class="lg:hidden grid place-items-center w-9 h-9 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto nice-scroll px-5 py-3 space-y-1 text-sm">
+        <!-- Output -->
+        <details open class="group border-b border-slate-100 dark:border-slate-800 pb-3">
+          <summary class="flex items-center justify-between py-3 font-semibold">Output file
+            <svg class="chev w-4 h-4 text-slate-400 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">File name</label>
+          <div class="flex items-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 focus-within:ring-2 focus-within:ring-brand-400 overflow-hidden">
+            <input id="optName" type="text" value="merged" class="flex-1 min-w-0 bg-transparent px-3 py-2.5 outline-none">
+            <span class="px-3 text-slate-400 font-medium">.pdf</span>
+          </div>
+        </details>
+
+        <!-- Layout -->
+        <details open class="border-b border-slate-100 dark:border-slate-800 pb-3">
+          <summary class="flex items-center justify-between py-3 font-semibold">Page layout
+            <svg class="chev w-4 h-4 text-slate-400 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Page size</label>
+          <div class="grid grid-cols-3 gap-1.5" id="sizeGroup">
+            <button data-v="original" class="opt-chip">Original</button>
+            <button data-v="A4" class="opt-chip">A4</button>
+            <button data-v="Letter" class="opt-chip">Letter</button>
+            <button data-v="Legal" class="opt-chip">Legal</button>
+            <button data-v="A3" class="opt-chip">A3</button>
+            <button data-v="A5" class="opt-chip">A5</button>
+          </div>
+          <div id="layoutExtra" class="hidden mt-3 space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Orientation</label>
+              <div class="grid grid-cols-3 gap-1.5" id="orientGroup">
+                <button data-v="auto" class="opt-chip">Auto</button>
+                <button data-v="portrait" class="opt-chip">Portrait</button>
+                <button data-v="landscape" class="opt-chip">Landscape</button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Margin</label>
+              <div class="grid grid-cols-3 gap-1.5" id="marginGroup">
+                <button data-v="0" class="opt-chip">None</button>
+                <button data-v="18" class="opt-chip">Small</button>
+                <button data-v="42" class="opt-chip">Large</button>
+              </div>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Pages are scaled to fit and centred. Links and form fields may be flattened when resizing.</p>
+          </div>
+        </details>
+
+        <!-- Extras -->
+        <details open class="border-b border-slate-100 dark:border-slate-800 pb-3">
+          <summary class="flex items-center justify-between py-3 font-semibold">Pages & numbering
+            <svg class="chev w-4 h-4 text-slate-400 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <label class="flex items-center justify-between gap-3 py-2">
+            <span><span class="font-medium block">Blank page between files</span><span class="text-xs text-slate-500 dark:text-slate-400">Separate each document</span></span>
+            <span class="switch"><input type="checkbox" id="optBlank"><span class="track"></span><span class="thumb"></span></span>
+          </label>
+          <label class="flex items-center justify-between gap-3 py-2">
+            <span><span class="font-medium block">Start files on odd pages</span><span class="text-xs text-slate-500 dark:text-slate-400">Best for double-sided printing</span></span>
+            <span class="switch"><input type="checkbox" id="optOdd"><span class="track"></span><span class="thumb"></span></span>
+          </label>
+          <label class="flex items-center justify-between gap-3 py-2">
+            <span><span class="font-medium block">Add page numbers</span><span class="text-xs text-slate-500 dark:text-slate-400">Stamp numbers on every page</span></span>
+            <span class="switch"><input type="checkbox" id="optNum"><span class="track"></span><span class="thumb"></span></span>
+          </label>
+          <div id="numExtra" class="hidden space-y-3 mt-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+            <div class="flex gap-3">
+              <div class="flex-1">
+                <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1.5">Position</label>
+                <div id="posGroup" class="grid grid-cols-3 gap-1 p-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 aspect-[4/3] w-28">
+                  <button data-v="tl" class="pos-btn"></button><button data-v="tc" class="pos-btn"></button><button data-v="tr" class="pos-btn"></button>
+                  <span></span><span></span><span></span>
+                  <button data-v="bl" class="pos-btn"></button><button data-v="bc" class="pos-btn"></button><button data-v="br" class="pos-btn"></button>
+                </div>
+              </div>
+              <div class="flex-1 space-y-2">
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Start at</label>
+                  <input id="optNumStart" type="number" min="0" value="1" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-400">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Font size</label>
+                  <input id="optNumSize" type="number" min="6" max="36" value="10" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-400">
+                </div>
+              </div>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">Format</label>
+              <select id="optNumFmt" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-400">
+                <option value="n">1</option>
+                <option value="page-n">Page 1</option>
+                <option value="n-of">1 of 12</option>
+                <option value="page-n-of">Page 1 of 12</option>
+                <option value="slash">1 / 12</option>
+              </select>
+            </div>
+          </div>
+        </details>
+
+        <!-- Watermark -->
+        <details class="border-b border-slate-100 dark:border-slate-800 pb-3">
+          <summary class="flex items-center justify-between py-3 font-semibold">Watermark
+            <svg class="chev w-4 h-4 text-slate-400 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <label class="flex items-center justify-between gap-3 py-2">
+            <span class="font-medium">Add text watermark</span>
+            <span class="switch"><input type="checkbox" id="optWm"><span class="track"></span><span class="thumb"></span></span>
+          </label>
+          <div id="wmExtra" class="hidden space-y-3 mt-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50">
+            <input id="optWmText" type="text" value="CONFIDENTIAL" placeholder="Watermark text" class="w-full px-3 py-2 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-400">
+            <div class="flex items-center gap-3">
+              <input id="optWmColor" type="color" value="#f5372d" class="w-10 h-10 rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent cursor-pointer">
+              <div class="flex-1">
+                <div class="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1"><span>Opacity</span><span id="wmOpVal">20%</span></div>
+                <input id="optWmOpacity" type="range" min="5" max="100" value="20" class="w-full">
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-1.5" id="wmStyleGroup">
+              <button data-v="diagonal" class="opt-chip">Diagonal</button>
+              <button data-v="horizontal" class="opt-chip">Horizontal</button>
+            </div>
+          </div>
+        </details>
+
+        <!-- Metadata -->
+        <details class="pb-3">
+          <summary class="flex items-center justify-between py-3 font-semibold">Document properties
+            <svg class="chev w-4 h-4 text-slate-400 transition" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></summary>
+          <div class="space-y-2">
+            <input id="optTitle" type="text" placeholder="Title" class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-400">
+            <input id="optAuthor" type="text" placeholder="Author" class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-400">
+            <input id="optSubject" type="text" placeholder="Subject" class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-400">
+            <input id="optKeywords" type="text" placeholder="Keywords (comma separated)" class="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-400">
+          </div>
+        </details>
+      </div>
+
+      <div class="p-4 sm:p-5 border-t border-slate-100 dark:border-slate-800 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div id="sumLine" class="text-xs text-slate-500 dark:text-slate-400 mb-3 text-center"></div>
+        <button id="mergeBtn" class="merge-btn w-full inline-flex items-center justify-center gap-2.5 py-4 rounded-2xl bg-gradient-to-r from-brand-500 to-orange-500 hover:from-brand-600 hover:to-orange-600 text-white text-lg font-bold shadow-xl shadow-brand-500/30 active:scale-[.98] transition disabled:opacity-50 disabled:pointer-events-none">
+          Merge PDF
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Mobile bottom bar -->
+  <div class="lg:hidden fixed bottom-0 inset-x-0 z-[60] p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] bg-white/85 dark:bg-slate-950/85 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800 flex gap-2">
+    <button id="openSheet" class="inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 font-semibold">
+      <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/></svg>
+      Options
+    </button>
+    <button id="mergeBtnMobile" class="merge-btn flex-1 inline-flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-brand-500 to-orange-500 text-white font-bold shadow-lg shadow-brand-500/30 active:scale-[.98] transition disabled:opacity-50">
+      Merge PDF <span id="mobileCount" class="text-xs font-semibold bg-white/25 rounded-full px-2 py-0.5"></span>
+    </button>
+  </div>
+</main>
+
+<!-- ================= RESULT SCREEN ================= -->
+<main id="resultScreen" class="hidden px-4 sm:px-6">
+  <section class="max-w-3xl mx-auto pt-10 sm:pt-16 pb-16 text-center">
+    <div class="pop mx-auto w-20 h-20 rounded-full bg-emerald-500 text-white grid place-items-center shadow-xl shadow-emerald-500/30">
+      <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path class="draw" d="M20 6 9 17l-5-5"/></svg>
+    </div>
+    <h1 class="mt-6 text-3xl sm:text-5xl font-black tracking-tight">PDFs have been merged!</h1>
+    <p class="mt-3 text-slate-500 dark:text-slate-400">Your file is ready. It was created entirely on your device.</p>
+
+    <div class="mt-8 p-5 sm:p-6 rounded-3xl bg-white/90 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 shadow-xl text-left flex flex-col sm:flex-row items-center gap-5">
+      <div class="shrink-0 w-24 h-32 rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden grid place-items-center shadow-inner">
+        <img id="resThumb" class="max-w-full max-h-full" alt="">
+      </div>
+      <div class="flex-1 min-w-0 w-full text-center sm:text-left">
+        <div id="resName" class="font-bold text-lg truncate"></div>
+        <div id="resMeta" class="text-sm text-slate-500 dark:text-slate-400 mt-1"></div>
+        <div class="mt-4 flex flex-col sm:flex-row gap-2">
+          <a id="downloadBtn" class="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl bg-gradient-to-r from-brand-500 to-orange-500 text-white font-bold shadow-lg shadow-brand-500/30 hover:opacity-95 active:scale-[.98] transition">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            Download merged PDF
+          </a>
+          <a id="openTabBtn" target="_blank" rel="noopener" class="inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Open preview</a>
+          <button id="shareBtn" class="hidden items-center justify-center gap-2 px-5 py-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800 font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition">Share</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 flex flex-wrap justify-center gap-3">
+      <button id="backEditBtn" class="inline-flex items-center gap-2 px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-700 font-semibold hover:border-brand-400 transition">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg> Back to editing
+      </button>
+      <button id="startOverBtn" class="inline-flex items-center gap-2 px-5 py-3 rounded-xl border border-slate-200 dark:border-slate-700 font-semibold hover:border-brand-400 transition">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Merge new files
+      </button>
+    </div>
+
+    <div id="resPreviewWrap" class="hidden md:block mt-10 rounded-3xl overflow-hidden border border-slate-200 dark:border-slate-800 shadow-xl bg-slate-100 dark:bg-slate-900">
+      <iframe id="resFrame" class="w-full h-[70vh]" title="Merged PDF preview"></iframe>
+    </div>
+  </section>
+</main>
+
+<!-- Global drop overlay -->
+<div id="dropOverlay" class="fixed inset-0 z-[90] hidden items-center justify-center bg-brand-500/15 backdrop-blur-md p-6">
+  <div class="w-full h-full max-w-5xl rounded-[2rem] border-4 border-dashed border-brand-500 grid place-items-center bg-white/60 dark:bg-slate-900/60">
+    <div class="text-center">
+      <div class="mx-auto w-20 h-20 rounded-3xl bg-brand-500 text-white grid place-items-center shadow-2xl mb-4 animate-bounce">
+        <svg class="w-10 h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+      </div>
+      <p class="text-2xl font-extrabold">Drop PDFs to add them</p>
+    </div>
+  </div>
+</div>
+
+<!-- Processing overlay -->
+<div id="procOverlay" class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-950/60 backdrop-blur-md p-6">
+  <div class="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-8 text-center shadow-2xl pop">
+    <div class="relative mx-auto w-20 h-20 mb-5">
+      <div class="absolute inset-0 rounded-full border-4 border-slate-100 dark:border-slate-800"></div>
+      <div class="absolute inset-0 rounded-full border-4 border-transparent border-t-brand-500 border-r-orange-500 animate-spin"></div>
+      <div class="absolute inset-0 grid place-items-center font-extrabold text-lg" id="procPct">0%</div>
+    </div>
+    <h3 class="text-xl font-extrabold">Merging PDFs…</h3>
+    <p id="procText" class="text-sm text-slate-500 dark:text-slate-400 mt-1">Preparing</p>
+    <div class="mt-5 h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+      <div id="procBar" class="h-full w-0 bg-gradient-to-r from-brand-500 to-orange-500 rounded-full transition-all duration-200"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Preview modal -->
+<div id="previewModal" class="fixed inset-0 z-[85] hidden flex-col bg-slate-950/90 backdrop-blur-md">
+  <div class="flex items-center justify-between gap-3 px-4 sm:px-6 h-16 text-white">
+    <div class="min-w-0">
+      <div id="pvTitle" class="font-semibold truncate"></div>
+      <div id="pvSub" class="text-xs text-white/60"></div>
+    </div>
+    <div class="flex items-center gap-1">
+      <button id="pvRotL" class="grid place-items-center w-10 h-10 rounded-xl hover:bg-white/10" title="Rotate left"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+      <button id="pvRotR" class="grid place-items-center w-10 h-10 rounded-xl hover:bg-white/10" title="Rotate right"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
+      <button id="pvClose" class="grid place-items-center w-10 h-10 rounded-xl hover:bg-white/10" title="Close"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+  </div>
+  <div id="pvStage" class="relative flex-1 min-h-0 flex items-center justify-center p-3 sm:p-8">
+    <canvas id="pvCanvas" class="max-w-full max-h-full rounded-lg shadow-2xl bg-white"></canvas>
+    <div id="pvLoading" class="absolute inset-0 grid place-items-center"><div class="w-10 h-10 rounded-full border-4 border-white/20 border-t-white animate-spin"></div></div>
+    <button id="pvPrev" class="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 grid place-items-center w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+    <button id="pvNext" class="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 grid place-items-center w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur"><svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></button>
+  </div>
+</div>
+
+<!-- File settings modal -->
+<div id="fsModal" class="fixed inset-0 z-[85] hidden items-end sm:items-center justify-center bg-slate-950/60 backdrop-blur-sm sm:p-6">
+  <div class="w-full sm:max-w-md bg-white dark:bg-slate-900 rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] fade-up">
+    <div class="flex items-start justify-between gap-3 mb-5">
+      <div class="min-w-0">
+        <h3 class="text-lg font-extrabold">File settings</h3>
+        <p id="fsName" class="text-sm text-slate-500 dark:text-slate-400 truncate"></p>
+      </div>
+      <button data-close-fs class="grid place-items-center w-9 h-9 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+    </div>
+    <label class="block text-sm font-semibold mb-1.5">Pages to include</label>
+    <input id="fsRange" type="text" placeholder="All pages (e.g. 1-3, 5, 8-)" class="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-brand-400">
+    <p id="fsHint" class="text-xs mt-1.5 text-slate-500 dark:text-slate-400"></p>
+    <div class="flex flex-wrap gap-1.5 mt-2">
+      <button data-quick="" class="quick-chip">All</button>
+      <button data-quick="odd" class="quick-chip">Odd</button>
+      <button data-quick="even" class="quick-chip">Even</button>
+      <button data-quick="first" class="quick-chip">First</button>
+      <button data-quick="last" class="quick-chip">Last</button>
+    </div>
+    <label class="block text-sm font-semibold mt-5 mb-1.5">Rotation</label>
+    <div class="flex items-center gap-2">
+      <button id="fsRotL" class="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-medium hover:bg-slate-200 dark:hover:bg-slate-700">↺ Left</button>
+      <span id="fsRotVal" class="w-16 text-center font-bold">0°</span>
+      <button id="fsRotR" class="flex-1 inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-medium hover:bg-slate-200 dark:hover:bg-slate-700">Right ↻</button>
+    </div>
+    <div class="flex gap-2 mt-6">
+      <button data-close-fs class="flex-1 py-3 rounded-xl border border-slate-200 dark:border-slate-700 font-semibold">Cancel</button>
+      <button id="fsSave" class="flex-1 py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toasts -->
+<div id="toasts" class="fixed z-[100] top-20 right-3 left-3 sm:left-auto sm:w-96 flex flex-col gap-2 pointer-events-none"></div>
+
+
+<script>
+(() => {
+  'use strict';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  // ---------- Helpers ----------
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const norm = a => ((a % 360) + 360) % 360;
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtSize = b => b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' KB' : (b / 1048576).toFixed(2) + ' MB';
+  const tick = () => new Promise(r => setTimeout(r, 0));
+  const COLORS = ['#f5372d', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'];
+  let colorIdx = 0;
+
+  const IC = {
+    rotR: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+    rotL: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+    x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+    gear: '<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="2" x2="6" y1="14" y2="14"/><line x1="10" x2="14" y1="8" y2="8"/><line x1="18" x2="22" y1="16" y2="16"/>',
+    eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
+    plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    grip: '<circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/>',
+  };
+  const ic = (n, c = 'w-4 h-4', sw = 2.2) => `<svg class="${c}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${IC[n]}</svg>`;
+
+  // ---------- State ----------
+  const state = {
+    files: [],
+    pages: [],
+    mode: 'files',
+    pagesDirty: true,
+    selected: new Set(),
+    result: null,
+    screen: 'upload',
+  };
+  const thumbCache = new Map();
+  const fileById = id => state.files.find(f => f.id === id);
+
+  // ---------- Toasts ----------
+  function toast(msg, type = 'info') {
+    const colors = { info: 'bg-slate-900 text-white dark:bg-white dark:text-slate-900', error: 'bg-brand-600 text-white', success: 'bg-emerald-600 text-white' };
+    const el = document.createElement('div');
+    el.className = `pointer-events-auto px-4 py-3 rounded-2xl shadow-2xl text-sm font-medium fade-up ${colors[type] || colors.info}`;
+    el.textContent = msg;
+    $('#toasts').appendChild(el);
+    setTimeout(() => { el.style.transition = 'opacity .3s, transform .3s'; el.style.opacity = '0'; el.style.transform = 'translateY(-6px)'; setTimeout(() => el.remove(), 300); }, 3800);
+  }
+
+  // ---------- Range parsing ----------
+  function parseRange(str, n) {
+    str = (str || '').trim().toLowerCase();
+    if (!str) return null;
+    if (str === 'odd') return [...Array(n).keys()].filter(i => i % 2 === 0);
+    if (str === 'even') return [...Array(n).keys()].filter(i => i % 2 === 1);
+    const out = [];
+    for (let part of str.split(/[,;\s]+/).filter(Boolean)) {
+      part = part.replace(/last|end/g, String(n));
+      let m;
+      if ((m = part.match(/^(\d+)$/))) {
+        const a = +m[1]; if (a < 1 || a > n) throw new Error(`Page ${a} doesn't exist (file has ${n})`);
+        out.push(a - 1);
+      } else if ((m = part.match(/^(\d*)-(\d*)$/))) {
+        let a = m[1] ? +m[1] : 1, b = m[2] ? +m[2] : n;
+        if (a < 1 || b > n || a > n || b < 1) throw new Error(`Range "${part}" is outside 1–${n}`);
+        if (a <= b) for (let i = a; i <= b; i++) out.push(i - 1);
+        else for (let i = a; i >= b; i--) out.push(i - 1);
+      } else throw new Error(`Couldn't understand "${part}"`);
+    }
+    if (!out.length) throw new Error('No pages selected');
+    return out;
+  }
+  const fileIndices = f => { try { return parseRange(f.range, f.pageCount) || [...Array(f.pageCount).keys()]; } catch { return [...Array(f.pageCount).keys()]; } };
+
+  // ---------- PDF rendering ----------
+  let renderQ = Promise.resolve();
+  const queue = fn => { const p = renderQ.then(fn); renderQ = p.catch(() => {}); return p; };
+
+  async function renderThumb(pdf, pageNo, width = 260) {
+    const page = await pdf.getPage(pageNo);
+    const vp1 = page.getViewport({ scale: 1 });
+    const vp = page.getViewport({ scale: width / vp1.width });
+    const c = document.createElement('canvas');
+    c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    return c.toDataURL('image/jpeg', 0.82);
+  }
+
+  // ---------- Adding files ----------
+  async function addFiles(list) {
+    const all = [...list];
+    const pdfs = all.filter(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+    if (all.length - pdfs.length > 0) toast(`${all.length - pdfs.length} non-PDF file(s) ignored`, 'error');
+    if (!pdfs.length) return;
+    state.result = null;
+    setScreen('workspace');
+    const entries = pdfs.map(f => ({ id: uid(), raw: f, name: f.name, size: f.size, lastModified: f.lastModified, rotation: 0, range: '', color: COLORS[colorIdx++ % COLORS.length], loading: true, pageCount: 0 }));
+    state.files.push(...entries);
+    state.pagesDirty = state.mode === 'files' ? true : state.pagesDirty;
+    render();
+    for (const e of entries) {
+      try {
+        const buf = new Uint8Array(await e.raw.arrayBuffer());
+        e.bytes = buf;
+        const pdf = await pdfjsLib.getDocument({ data: buf.slice() }).promise;
+        e.pdf = pdf; e.pageCount = pdf.numPages;
+        e.thumb = await queue(() => renderThumb(pdf, 1, 280));
+        thumbCache.set(`${e.id}:0`, e.thumb);
+        e.loading = false;
+        delete e.raw;
+        if (state.mode === 'pages' && !state.pagesDirty) {
+          for (let i = 0; i < e.pageCount; i++) state.pages.push({ id: uid(), fileId: e.id, index: i, rotation: 0 });
+        }
+      } catch (err) {
+        console.error(err);
+        state.files = state.files.filter(x => x.id !== e.id);
+        toast(err && err.name === 'PasswordException' ? `"${e.name}" is password-protected and was skipped` : `Couldn't read "${e.name}" — it may be damaged`, 'error');
+      }
+      render();
+    }
+    if (!state.files.length) setScreen('upload');
+  }
+
+  // ---------- Screens ----------
+  function setScreen(s) {
+    state.screen = s;
+    $('#uploadScreen').classList.toggle('hidden', s !== 'upload');
+    $('#workspace').classList.toggle('hidden', s !== 'workspace');
+    $('#resultScreen').classList.toggle('hidden', s !== 'result');
+    window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+  }
+
+  // ---------- Pages mode ----------
+  function buildPages() {
+    state.pages = [];
+    for (const f of state.files) {
+      if (f.loading) continue;
+      for (const i of fileIndices(f)) state.pages.push({ id: uid(), fileId: f.id, index: i, rotation: f.rotation });
+    }
+    state.selected.clear();
+    state.pagesDirty = false;
+  }
+
+  function setMode(m) {
+    if (m === state.mode) return;
+    state.mode = m;
+    if (m === 'pages' && (state.pagesDirty || !state.pages.length)) buildPages();
+    state.selected.clear();
+    render();
+  }
+
+  // ---------- Rendering ----------
+  const grid = $('#grid');
+  let io;
+
+  function render() {
+    if (state.screen !== 'workspace') return;
+    const ready = state.files.filter(f => !f.loading);
+    const totalPages = planCount();
+    $$('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === state.mode));
+    $('#stats').textContent = `${state.files.length} file${state.files.length !== 1 ? 's' : ''} · ${totalPages} page${totalPages !== 1 ? 's' : ''}`;
+    $('#resetPagesBtn').classList.toggle('hidden', state.mode !== 'pages');
+    $('#hintText').textContent = state.mode === 'files'
+      ? 'Drag files to reorder. Use ⚙ to choose page ranges, or switch to Pages to arrange individual pages.'
+      : 'Drag pages to reorder across files. Tick pages to rotate or delete several at once.';
+    $('#mobileCount').textContent = totalPages ? `${totalPages} pages` : '';
+    $('#sumLine').textContent = `${state.files.length} file(s) → 1 PDF with ${totalPages} page(s)`;
+    const busy = state.files.some(f => f.loading);
+    $$('.merge-btn').forEach(b => b.disabled = busy || totalPages === 0 || (state.mode === 'files' && ready.length < 1));
+
+    if (state.mode === 'files') {
+      grid.className = 'grid gap-3 sm:gap-5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5';
+      grid.innerHTML = state.files.map((f, i) => fileCard(f, i)).join('') + addTile();
+    } else {
+      grid.className = 'grid gap-3 sm:gap-4 grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-7';
+      grid.innerHTML = state.pages.length ? state.pages.map((p, i) => pageCard(p, i)).join('') + addTile(true)
+        : `<div class="col-span-full text-center py-16 rounded-3xl border-2 border-dashed border-slate-300 dark:border-slate-700">
+             <p class="font-semibold">All pages removed</p>
+             <button data-action="reset" class="mt-3 px-4 py-2 rounded-xl bg-brand-500 text-white font-semibold">Restore pages</button></div>`;
+      observeThumbs();
+    }
+    renderSelBar();
+  }
+
+  function fileCard(f, i) {
+    const range = f.range ? (() => { try { return parseRange(f.range, f.pageCount).length; } catch { return null; } })() : null;
+    return `
+    <div class="sortable-item group fade-up" data-id="${f.id}">
+      <div class="card-lift relative aspect-[4/5] rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:shadow-slate-900/10 flex items-center justify-center overflow-hidden cursor-grab" style="box-shadow: inset 0 -4px 0 ${f.color}">
+        ${f.loading
+          ? `<div class="w-[62%] aspect-[3/4] rounded-md skeleton"></div>`
+          : `<img src="${f.thumb}" alt="" draggable="false" data-action="preview" data-id="${f.id}" class="max-w-[76%] max-h-[76%] rounded-sm shadow-lg ring-1 ring-slate-900/5 transition-transform duration-300 cursor-zoom-in" style="transform: rotate(${f.rotation}deg)">`}
+        <span class="absolute top-2 left-2 min-w-6 h-6 px-1.5 grid place-items-center rounded-full text-[11px] font-bold text-white shadow" style="background:${f.color}">${i + 1}</span>
+        ${!f.loading ? `
+        <div class="absolute top-2 right-2 flex flex-col gap-1.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition">
+          <button data-action="remove" data-id="${f.id}" class="icon-btn" title="Remove">${ic('x')}</button>
+          <button data-action="rotate" data-id="${f.id}" class="icon-btn" title="Rotate">${ic('rotR')}</button>
+          <button data-action="settings" data-id="${f.id}" class="icon-btn" title="Pages & settings">${ic('gear')}</button>
+          <button data-action="preview" data-id="${f.id}" class="icon-btn hidden sm:grid" title="Preview">${ic('eye')}</button>
+        </div>
+        <div class="absolute bottom-3 left-2 right-2 flex flex-wrap gap-1">
+          <span class="px-2 py-0.5 rounded-full bg-slate-900/80 text-white text-[10px] sm:text-[11px] font-semibold backdrop-blur">${f.pageCount} pg</span>
+          ${f.range ? `<span class="px-2 py-0.5 rounded-full bg-brand-500 text-white text-[10px] sm:text-[11px] font-semibold truncate max-w-full" title="Pages ${esc(f.range)}">${range != null ? range + ' selected' : 'invalid range'}</span>` : ''}
+        </div>` : ''}
+      </div>
+      <div class="mt-2 px-1">
+        <div class="text-xs sm:text-sm font-semibold truncate" title="${esc(f.name)}">${esc(f.name)}</div>
+        <div class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400">${fmtSize(f.size)}${f.loading ? ' · loading…' : ''}</div>
+      </div>
+    </div>`;
+  }
+
+  function pageCard(p, i) {
+    const f = fileById(p.fileId);
+    if (!f) return '';
+    const key = `${p.fileId}:${p.index}`;
+    const src = thumbCache.get(key);
+    const sel = state.selected.has(p.id);
+    return `
+    <div class="sortable-item group" data-id="${p.id}">
+      <div class="relative aspect-[3/4] rounded-xl bg-white dark:bg-slate-900 border-2 ${sel ? 'border-brand-500 ring-4 ring-brand-500/20' : 'border-transparent'} shadow-sm hover:shadow-lg flex items-center justify-center overflow-hidden cursor-grab transition">
+        ${src ? '' : '<div class="absolute inset-[18%] rounded skeleton"></div>'}
+        <img ${src ? `src="${src}"` : ''} data-key="${key}" draggable="false" data-action="preview" data-id="${p.id}" alt="" class="relative max-w-[80%] max-h-[80%] shadow-md ring-1 ring-slate-900/5 transition-transform duration-300 cursor-zoom-in" style="transform: rotate(${p.rotation}deg)">
+        <button data-action="select" data-id="${p.id}" class="absolute top-1.5 left-1.5 w-6 h-6 rounded-md border-2 grid place-items-center transition ${sel ? 'bg-brand-500 border-brand-500 text-white' : 'bg-white/90 dark:bg-slate-800/90 border-slate-300 dark:border-slate-600 text-transparent opacity-100 lg:opacity-0 lg:group-hover:opacity-100'}">${ic('check', 'w-3.5 h-3.5', 3)}</button>
+        <div class="absolute top-1.5 right-1.5 flex flex-col gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition">
+          <button data-action="pdel" data-id="${p.id}" class="icon-btn !w-7 !h-7" title="Delete page">${ic('x', 'w-3.5 h-3.5')}</button>
+          <button data-action="prot" data-id="${p.id}" class="icon-btn !w-7 !h-7" title="Rotate page">${ic('rotR', 'w-3.5 h-3.5')}</button>
+        </div>
+        <span class="absolute bottom-0 inset-x-0 h-1" style="background:${f.color}"></span>
+      </div>
+      <div class="mt-1.5 text-center leading-tight">
+        <div class="text-xs font-bold">${i + 1}</div>
+        <div class="text-[10px] text-slate-500 dark:text-slate-400 truncate" title="${esc(f.name)} — page ${p.index + 1}"><span class="inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle" style="background:${f.color}"></span>${esc(f.name.replace(/\.pdf$/i, ''))} · p${p.index + 1}</div>
+      </div>
+    </div>`;
+  }
+
+  function addTile(small) {
+    return `<button data-action="add" class="group ${small ? 'aspect-[3/4] rounded-xl' : 'aspect-[4/5] rounded-2xl'} border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-brand-400 hover:bg-brand-50/50 dark:hover:bg-brand-500/5 flex flex-col items-center justify-center gap-2 text-slate-500 hover:text-brand-600 transition">
+      <span class="${small ? 'w-10 h-10' : 'w-12 h-12'} rounded-full bg-slate-100 dark:bg-slate-800 group-hover:bg-brand-500 group-hover:text-white grid place-items-center transition">${ic('plus', 'w-5 h-5', 2.5)}</span>
+      <span class="text-xs sm:text-sm font-semibold">Add more</span></button>`;
+  }
+
+  function observeThumbs() {
+    if (io) io.disconnect();
+    io = new IntersectionObserver(entries => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        const img = en.target; io.unobserve(img);
+        const key = img.dataset.key;
+        if (thumbCache.has(key)) { img.src = thumbCache.get(key); continue; }
+        const [fid, idx] = key.split(':');
+        const f = fileById(fid); if (!f || !f.pdf) continue;
+        queue(() => renderThumb(f.pdf, +idx + 1, 220)).then(url => {
+          thumbCache.set(key, url);
+          $$(`img[data-key="${key}"]`, grid).forEach(el => { el.src = url; el.previousElementSibling?.classList.contains('skeleton') && el.previousElementSibling.remove(); });
+        }).catch(() => {});
+      }
+    }, { rootMargin: '300px' });
+    $$('img[data-key]:not([src])', grid).forEach(el => io.observe(el));
+  }
+
+  function renderSelBar() {
+    const n = state.selected.size;
+    $('#selBar').classList.toggle('hidden', !(state.mode === 'pages' && n > 0));
+    $('#selCount').textContent = `${n} page${n !== 1 ? 's' : ''} selected`;
+  }
+
+  // ---------- Sortable ----------
+  Sortable.create(grid, {
+    animation: 200,
+    easing: 'cubic-bezier(.2,.8,.2,1)',
+    draggable: '.sortable-item',
+    filter: 'button',
+    preventOnFilter: false,
+    delay: 160,
+    delayOnTouchOnly: true,
+    touchStartThreshold: 5,
+    ghostClass: 'sortable-ghost',
+    chosenClass: 'sortable-chosen',
+    dragClass: 'sortable-drag',
+    onEnd: () => {
+      const ids = $$('.sortable-item', grid).map(el => el.dataset.id);
+      if (state.mode === 'files') {
+        state.files.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+        state.pagesDirty = true;
+      } else {
+        state.pages.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+      }
+      render();
+    }
+  });
+
+  // ---------- Grid actions ----------
+  grid.addEventListener('click', e => {
+    const t = e.target.closest('[data-action]');
+    if (!t) return;
+    const { action, id } = t.dataset;
+    if (action === 'add') return $('#fileInput').click();
+    if (action === 'reset') { buildPages(); return render(); }
+    if (state.mode === 'files') {
+      const f = fileById(id); if (!f) return;
+      if (action === 'remove') {
+        state.files = state.files.filter(x => x.id !== id);
+        state.pagesDirty = true;
+        if (!state.files.length) { setScreen('upload'); return; }
+      } else if (action === 'rotate') { f.rotation = norm(f.rotation + 90); state.pagesDirty = true; }
+      else if (action === 'settings') return openFileSettings(f);
+      else if (action === 'preview') {
+        const list = fileIndices(f).map(i => ({ fileId: f.id, index: i, rotation: f.rotation }));
+        return openPreview(list, 0, null);
+      }
+    } else {
+      const p = state.pages.find(x => x.id === id); if (!p) return;
+      if (action === 'pdel') { state.pages = state.pages.filter(x => x.id !== id); state.selected.delete(id); }
+      else if (action === 'prot') p.rotation = norm(p.rotation + 90);
+      else if (action === 'select') { state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id); }
+      else if (action === 'preview') return openPreview(state.pages, state.pages.indexOf(p), true);
+    }
+    render();
+  });
+
+  $('#selBar').addEventListener('click', e => {
+    const b = e.target.closest('[data-bulk]'); if (!b) return;
+    const act = b.dataset.bulk;
+    const sel = state.selected;
+    if (act === 'all') state.pages.forEach(p => sel.add(p.id));
+    else if (act === 'clear') sel.clear();
+    else if (act === 'rotl' || act === 'rotr') state.pages.forEach(p => { if (sel.has(p.id)) p.rotation = norm(p.rotation + (act === 'rotr' ? 90 : -90)); });
+    else if (act === 'del') { state.pages = state.pages.filter(p => !sel.has(p.id)); sel.clear(); }
+    render();
+  });
+
+  // ---------- Toolbar ----------
+  $$('.mode-btn').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  $('#addMoreBtn').addEventListener('click', () => $('#fileInput').click());
+  $('#resetPagesBtn').addEventListener('click', () => { buildPages(); render(); toast('Pages rebuilt from files'); });
+  $('#clearBtn').addEventListener('click', () => {
+    if (!confirm('Remove all files?')) return;
+    state.files = []; state.pages = []; state.pagesDirty = true; thumbCache.clear(); state.selected.clear();
+    setScreen('upload');
+  });
+  $('#sortSel').addEventListener('change', e => {
+    const v = e.target.value; e.target.value = '';
+    if (!v) return;
+    if (state.mode === 'pages') {
+      if (v === 'reverse') state.pages.reverse();
+      else {
+        // sort pages grouped by file order according to file sort
+        const fs = sortFiles([...state.files], v).map(f => f.id);
+        state.pages.sort((a, b) => fs.indexOf(a.fileId) - fs.indexOf(b.fileId) || a.index - b.index);
+      }
+    } else { state.files = sortFiles(state.files, v); state.pagesDirty = true; }
+    render();
+  });
+  function sortFiles(arr, v) {
+    const cmp = { 'name-asc': (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }), 'name-desc': (a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }), 'size-asc': (a, b) => a.size - b.size, 'size-desc': (a, b) => b.size - a.size, 'date-new': (a, b) => b.lastModified - a.lastModified, 'date-old': (a, b) => a.lastModified - b.lastModified };
+    return v === 'reverse' ? arr.reverse() : arr.sort(cmp[v]);
+  }
+
+  // ---------- File input & drag-drop ----------
+  $('#selectBtn').addEventListener('click', () => $('#fileInput').click());
+  $('#dropZone').addEventListener('click', e => { if (e.target === e.currentTarget) $('#fileInput').click(); });
+  $('#fileInput').addEventListener('change', e => { addFiles(e.target.files); e.target.value = ''; });
+
+  let dragDepth = 0;
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  const overlay = $('#dropOverlay');
+  window.addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; overlay.classList.replace('hidden', 'flex'); });
+  window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('dragleave', e => { if (!hasFiles(e)) return; dragDepth--; if (dragDepth <= 0) { dragDepth = 0; overlay.classList.replace('flex', 'hidden'); } });
+  window.addEventListener('drop', e => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth = 0; overlay.classList.replace('flex', 'hidden'); addFiles(e.dataTransfer.files); });
+
+  // ---------- Options UI ----------
+  function chipGroup(sel, def, onChange) {
+    const g = $(sel);
+    const set = v => { $$('[data-v]', g).forEach(b => b.classList.toggle('active', b.dataset.v === v)); g.dataset.value = v; onChange && onChange(v); };
+    g.addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) set(b.dataset.v); });
+    set(def);
+  }
+  chipGroup('#sizeGroup', 'original', v => $('#layoutExtra').classList.toggle('hidden', v === 'original'));
+  chipGroup('#orientGroup', 'auto');
+  chipGroup('#marginGroup', '0');
+  chipGroup('#posGroup', 'bc');
+  chipGroup('#wmStyleGroup', 'diagonal');
+  $('#optNum').addEventListener('change', e => $('#numExtra').classList.toggle('hidden', !e.target.checked));
+  $('#optWm').addEventListener('change', e => $('#wmExtra').classList.toggle('hidden', !e.target.checked));
+  $('#optWmOpacity').addEventListener('input', e => $('#wmOpVal').textContent = e.target.value + '%');
+
+  function getOptions() {
+    return {
+      name: ($('#optName').value.trim() || 'merged').replace(/\.pdf$/i, '').replace(/[\\/:*?"<>|]+/g, '-') + '.pdf',
+      size: $('#sizeGroup').dataset.value,
+      orient: $('#orientGroup').dataset.value,
+      margin: +$('#marginGroup').dataset.value,
+      blankBetween: $('#optBlank').checked,
+      oddStart: $('#optOdd').checked,
+      numbers: { on: $('#optNum').checked, pos: $('#posGroup').dataset.value, start: parseInt($('#optNumStart').value || '1', 10), size: Math.min(36, Math.max(6, +$('#optNumSize').value || 10)), fmt: $('#optNumFmt').value },
+      wm: { on: $('#optWm').checked && $('#optWmText').value.trim() !== '', text: $('#optWmText').value.trim(), color: $('#optWmColor').value, opacity: +$('#optWmOpacity').value / 100, style: $('#wmStyleGroup').dataset.value },
+      meta: { title: $('#optTitle').value.trim(), author: $('#optAuthor').value.trim(), subject: $('#optSubject').value.trim(), keywords: $('#optKeywords').value.trim() },
+    };
+  }
+
+  // ---------- Mobile sheet ----------
+  const sidebar = $('#sidebar'), backdrop = $('#sheetBackdrop');
+  const openSheet = () => { sidebar.classList.add('open'); backdrop.classList.remove('opacity-0', 'pointer-events-none'); };
+  const closeSheet = () => { sidebar.classList.remove('open'); backdrop.classList.add('opacity-0', 'pointer-events-none'); };
+  $('#openSheet').addEventListener('click', openSheet);
+  $('#closeSheet').addEventListener('click', closeSheet);
+  backdrop.addEventListener('click', closeSheet);
+
+  // ---------- File settings modal ----------
+  let fsFile = null, fsRot = 0;
+  const fsModal = $('#fsModal');
+  function openFileSettings(f) {
+    fsFile = f; fsRot = f.rotation;
+    $('#fsName').textContent = `${f.name} · ${f.pageCount} pages`;
+    $('#fsRange').value = f.range;
+    $('#fsRotVal').textContent = fsRot + '°';
+    validateRange();
+    fsModal.classList.replace('hidden', 'flex');
+    setTimeout(() => $('#fsRange').focus(), 50);
+  }
+  const closeFs = () => fsModal.classList.replace('flex', 'hidden');
+  function validateRange() {
+    const hint = $('#fsHint');
+    try {
+      const r = parseRange($('#fsRange').value, fsFile.pageCount);
+      hint.className = 'text-xs mt-1.5 text-slate-500 dark:text-slate-400';
+      hint.textContent = r ? `${r.length} of ${fsFile.pageCount} pages will be included` : `All ${fsFile.pageCount} pages will be included · examples: 1-3, 5, 8-  ·  odd  ·  even`;
+      return true;
+    } catch (err) { hint.className = 'text-xs mt-1.5 text-brand-600 font-medium'; hint.textContent = err.message; return false; }
+  }
+  $('#fsRange').addEventListener('input', validateRange);
+  $('#fsRange').addEventListener('keydown', e => { if (e.key === 'Enter') $('#fsSave').click(); });
+  $$('[data-quick]').forEach(b => b.addEventListener('click', () => {
+    const q = b.dataset.quick; const n = fsFile.pageCount;
+    $('#fsRange').value = q === 'first' ? '1' : q === 'last' ? String(n) : q;
+    validateRange();
+  }));
+  $('#fsRotL').addEventListener('click', () => { fsRot = norm(fsRot - 90); $('#fsRotVal').textContent = fsRot + '°'; });
+  $('#fsRotR').addEventListener('click', () => { fsRot = norm(fsRot + 90); $('#fsRotVal').textContent = fsRot + '°'; });
+  $$('[data-close-fs]').forEach(b => b.addEventListener('click', closeFs));
+  fsModal.addEventListener('click', e => { if (e.target === fsModal) closeFs(); });
+  $('#fsSave').addEventListener('click', () => {
+    if (!validateRange()) return;
+    fsFile.range = $('#fsRange').value.trim();
+    fsFile.rotation = fsRot;
+    state.pagesDirty = true;
+    closeFs(); render();
+  });
+
+  // ---------- Preview modal ----------
+  const pv = { list: [], i: 0, live: false, token: 0 };
+  const pvModal = $('#previewModal');
+  function openPreview(list, i, live) {
+    pv.list = list; pv.i = i; pv.live = !!live;
+    pvModal.classList.replace('hidden', 'flex');
+    document.body.style.overflow = 'hidden';
+    drawPreview();
+  }
+  function closePreview() { pvModal.classList.replace('flex', 'hidden'); document.body.style.overflow = ''; if (pv.live) render(); }
+  async function drawPreview() {
+    const it = pv.list[pv.i]; if (!it) return;
+    const f = fileById(it.fileId); if (!f) return;
+    const token = ++pv.token;
+    $('#pvTitle').textContent = f.name;
+    $('#pvSub').textContent = `Page ${it.index + 1} of ${f.pageCount}  ·  ${pv.i + 1} / ${pv.list.length}`;
+    $('#pvPrev').style.visibility = pv.i > 0 ? 'visible' : 'hidden';
+    $('#pvNext').style.visibility = pv.i < pv.list.length - 1 ? 'visible' : 'hidden';
+    $('#pvRotL').style.display = $('#pvRotR').style.display = pv.live ? '' : 'none';
+    $('#pvLoading').style.display = 'grid';
+    const page = await f.pdf.getPage(it.index + 1);
+    if (token !== pv.token) return;
+    const rot = norm(page.rotate + (it.rotation || 0));
+    const stage = $('#pvStage');
+    const base = page.getViewport({ scale: 1, rotation: rot });
+    const maxW = stage.clientWidth - 32, maxH = stage.clientHeight - 32;
+    const scale = Math.min(maxW / base.width, maxH / base.height) * (window.devicePixelRatio || 1);
+    const vp = page.getViewport({ scale, rotation: rot });
+    const c = $('#pvCanvas');
+    c.width = vp.width; c.height = vp.height;
+    c.style.width = (vp.width / (window.devicePixelRatio || 1)) + 'px';
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise.catch(() => {});
+    if (token === pv.token) $('#pvLoading').style.display = 'none';
+  }
+  $('#pvClose').addEventListener('click', closePreview);
+  $('#pvPrev').addEventListener('click', () => { if (pv.i > 0) { pv.i--; drawPreview(); } });
+  $('#pvNext').addEventListener('click', () => { if (pv.i < pv.list.length - 1) { pv.i++; drawPreview(); } });
+  $('#pvRotL').addEventListener('click', () => { const p = pv.list[pv.i]; p.rotation = norm(p.rotation - 90); drawPreview(); });
+  $('#pvRotR').addEventListener('click', () => { const p = pv.list[pv.i]; p.rotation = norm(p.rotation + 90); drawPreview(); });
+  pvModal.addEventListener('click', e => { if (e.target.id === 'pvStage') closePreview(); });
+  let touchX = null;
+  $('#pvStage').addEventListener('touchstart', e => touchX = e.touches[0].clientX, { passive: true });
+  $('#pvStage').addEventListener('touchend', e => {
+    if (touchX == null) return; const dx = e.changedTouches[0].clientX - touchX; touchX = null;
+    if (Math.abs(dx) > 50) (dx < 0 ? $('#pvNext') : $('#pvPrev')).click();
+  });
+  document.addEventListener('keydown', e => {
+    if (pvModal.classList.contains('flex')) {
+      if (e.key === 'Escape') closePreview();
+      if (e.key === 'ArrowLeft') $('#pvPrev').click();
+      if (e.key === 'ArrowRight') $('#pvNext').click();
+    } else if (fsModal.classList.contains('flex') && e.key === 'Escape') closeFs();
+    else if (e.key === 'Escape') closeSheet();
+  });
+
+  // ---------- Merge plan ----------
+  function buildPlan() {
+    if (state.mode === 'pages') return state.pages.filter(p => fileById(p.fileId) && !fileById(p.fileId).loading).map(p => ({ fileId: p.fileId, index: p.index, rotation: p.rotation }));
+    const plan = [];
+    for (const f of state.files) {
+      if (f.loading) continue;
+      for (const i of fileIndices(f)) plan.push({ fileId: f.id, index: i, rotation: f.rotation });
+    }
+    return plan;
+  }
+  const planCount = () => state.mode === 'pages' ? state.pages.length : state.files.filter(f => !f.loading).reduce((s, f) => s + fileIndices(f).length, 0);
+
+  // ---------- Merge engine ----------
+  const SIZES = { A4: [595.28, 841.89], Letter: [612, 792], Legal: [612, 1008], A3: [841.89, 1190.55], A5: [419.53, 595.28] };
+
+  function targetDims(o, vw, vh) {
+    let [W, H] = SIZES[o.size];
+    const landscape = o.orient === 'landscape' || (o.orient === 'auto' && vw > vh);
+    return landscape ? [Math.max(W, H), Math.min(W, H)] : [Math.min(W, H), Math.max(W, H)];
+  }
+
+  function placeEmbedded(out, emb, rot, o) {
+    const w = emb.width, h = emb.height;
+    const vw = rot % 180 ? h : w, vh = rot % 180 ? w : h;
+    const [PW, PH] = targetDims(o, vw, vh);
+    const page = out.addPage([PW, PH]);
+    const m = Math.min(o.margin, PW / 4, PH / 4);
+    const s = Math.min((PW - 2 * m) / vw, (PH - 2 * m) / vh);
+    const bw = vw * s, bh = vh * s, x0 = (PW - bw) / 2, y0 = (PH - bh) / 2;
+    let x = x0, y = y0;
+    if (rot === 90) { x = x0; y = y0 + w * s; }
+    else if (rot === 180) { x = x0 + w * s; y = y0 + h * s; }
+    else if (rot === 270) { x = x0 + h * s; y = y0; }
+    page.drawPage(emb, { x, y, xScale: s, yScale: s, rotate: PDFLib.degrees(-rot) });
+    return page;
+  }
+
+  function visualInfo(page) {
+    const rot = norm(page.getRotation().angle);
+    const mb = page.getMediaBox();
+    return { rot, mb, W: rot % 180 ? mb.height : mb.width, H: rot % 180 ? mb.width : mb.height };
+  }
+  function drawVisualText(page, text, u, v, opts, extraDeg = 0) {
+    const { rot, mb } = visualInfo(page);
+    const w = mb.width, h = mb.height;
+    let x, y;
+    if (rot === 0) { x = u; y = v; }
+    else if (rot === 90) { x = w - v; y = u; }
+    else if (rot === 180) { x = w - u; y = h - v; }
+    else { x = v; y = h - u; }
+    page.drawText(text, { ...opts, x: x + mb.x, y: y + mb.y, rotate: PDFLib.degrees(rot + extraDeg) });
+  }
+  const hexToRgb = hex => { const n = parseInt(hex.slice(1), 16); return PDFLib.rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255); };
+
+  function setProgress(frac, text) {
+    const pct = Math.round(frac * 100);
+    $('#procBar').style.width = pct + '%';
+    $('#procPct').textContent = pct + '%';
+    if (text) $('#procText').textContent = text;
+  }
+
+  async function merge() {
+    if (state.files.some(f => f.loading)) return toast('Please wait until all files finish loading');
+    const plan = buildPlan();
+    if (!plan.length) return toast('Nothing to merge — add some pages first', 'error');
+    const o = getOptions();
+    closeSheet();
+    const proc = $('#procOverlay');
+    proc.classList.replace('hidden', 'flex');
+    setProgress(0, 'Preparing documents');
+    await tick();
+    try {
+      const { PDFDocument, degrees, StandardFonts, rgb, PageSizes } = PDFLib;
+      const out = await PDFDocument.create();
+      const cache = new Map();
+      const getSrc = async fid => {
+        if (!cache.has(fid)) cache.set(fid, await PDFDocument.load(fileById(fid).bytes, { ignoreEncryption: true, updateMetadata: false }));
+        return cache.get(fid);
+      };
+      const normalize = o.size !== 'original';
+      const blankIdx = new Set();
+      const addBlank = () => {
+        let size = PageSizes.A4;
+        const n = out.getPageCount();
+        if (normalize) size = targetDims(o, 1, 1.4);
+        else if (n) { const vi = visualInfo(out.getPage(n - 1)); size = [vi.W, vi.H]; }
+        blankIdx.add(out.getPageCount());
+        out.addPage(size);
+      };
+
+      const segments = [];
+      for (const it of plan) {
+        const last = segments[segments.length - 1];
+        if (last && last.fileId === it.fileId) last.items.push(it); else segments.push({ fileId: it.fileId, items: [it] });
+      }
+
+      const total = plan.length; let done = 0;
+      for (let s = 0; s < segments.length; s++) {
+        const seg = segments[s];
+        const f = fileById(seg.fileId);
+        if (s > 0 && o.blankBetween) addBlank();
+        if (o.oddStart && out.getPageCount() % 2 === 1) addBlank();
+        const src = await getSrc(seg.fileId);
+        const batches = []; let cur = [], seen = new Set();
+        for (const it of seg.items) { if (seen.has(it.index)) { batches.push(cur); cur = []; seen = new Set(); } cur.push(it); seen.add(it.index); }
+        if (cur.length) batches.push(cur);
+
+        for (const batch of batches) {
+          if (!normalize) {
+            const copied = await out.copyPages(src, batch.map(b => b.index));
+            copied.forEach((p, k) => { p.setRotation(degrees(norm(p.getRotation().angle + batch[k].rotation))); out.addPage(p); });
+          } else {
+            const srcPages = batch.map(b => src.getPage(b.index));
+            let embs;
+            try { embs = await out.embedPages(srcPages); }
+            catch { embs = []; for (const sp of srcPages) { try { embs.push((await out.embedPages([sp]))[0]); } catch { embs.push(null); } } }
+            embs.forEach((emb, k) => {
+              const rot = norm(srcPages[k].getRotation().angle + batch[k].rotation);
+              if (emb) placeEmbedded(out, emb, rot, o);
+              else { const { width, height } = srcPages[k].getSize(); out.addPage(targetDims(o, rot % 180 ? height : width, rot % 180 ? width : height)); }
+            });
+          }
+          done += batch.length;
+          setProgress(done / total * 0.85, `Adding page ${done} of ${total} · ${f.name}`);
+          await tick();
+        }
+      }
+
+      if (o.numbers.on || o.wm.on) {
+        setProgress(0.88, 'Stamping pages');
+        await tick();
+        const font = await out.embedFont(StandardFonts.Helvetica);
+        const fontB = await out.embedFont(StandardFonts.HelveticaBold);
+        const pages = out.getPages();
+        const N = pages.length;
+        const lastNum = N + o.numbers.start - 1;
+        pages.forEach((page, i) => {
+          if (blankIdx.has(i)) return;
+          const { W, H } = visualInfo(page);
+          if (o.wm.on) {
+            const t = o.wm.text;
+            const w1 = fontB.widthOfTextAtSize(t, 1);
+            const diag = o.wm.style === 'diagonal';
+            const ang = diag ? Math.atan2(H, W) : 0;
+            const span = diag ? Math.hypot(W, H) * 0.7 : W * 0.8;
+            const fs = Math.max(12, Math.min(160, span / w1));
+            const tw = w1 * fs;
+            const cx = W / 2, cy = H / 2, cs = Math.cos(ang), sn = Math.sin(ang), off = fs * 0.35;
+            const u = cx - cs * tw / 2 + sn * off, v = cy - sn * tw / 2 - cs * off;
+            drawVisualText(page, t, u, v, { size: fs, font: fontB, color: hexToRgb(o.wm.color), opacity: o.wm.opacity }, ang * 180 / Math.PI);
+          }
+          if (o.numbers.on) {
+            const n = i + o.numbers.start;
+            const txt = { n: `${n}`, 'page-n': `Page ${n}`, 'n-of': `${n} of ${lastNum}`, 'page-n-of': `Page ${n} of ${lastNum}`, slash: `${n} / ${lastNum}` }[o.numbers.fmt];
+            const fs = o.numbers.size, tw = font.widthOfTextAtSize(txt, fs);
+            const pad = Math.max(18, fs * 2);
+            const hpos = o.numbers.pos[1], vpos = o.numbers.pos[0];
+            const u = hpos === 'l' ? pad : hpos === 'r' ? W - pad - tw : (W - tw) / 2;
+            const v = vpos === 'b' ? pad * 0.8 : H - pad * 0.8 - fs;
+            drawVisualText(page, txt, u, v, { size: fs, font, color: rgb(0.2, 0.2, 0.22) });
+          }
+        });
+      }
+
+      setProgress(0.93, 'Writing document info');
+      const m = o.meta;
+      if (m.title) out.setTitle(m.title, { showInWindowTitleBar: true });
+      if (m.author) out.setAuthor(m.author);
+      if (m.subject) out.setSubject(m.subject);
+      if (m.keywords) out.setKeywords(m.keywords.split(',').map(s => s.trim()).filter(Boolean));
+      out.setCreator('PDFMerge');
+      out.setProducer('PDFMerge (pdf-lib)');
+      out.setCreationDate(new Date());
+      out.setModificationDate(new Date());
+
+      setProgress(0.96, 'Saving PDF');
+      await tick();
+      const bytes = await out.save({ useObjectStreams: true });
+      setProgress(1, 'Done!');
+      await new Promise(r => setTimeout(r, 250));
+      showResult(bytes, o.name, out.getPageCount());
+    } catch (err) {
+      console.error(err);
+      toast('Something went wrong while merging: ' + (err.message || err), 'error');
+    } finally {
+      proc.classList.replace('flex', 'hidden');
+    }
+  }
+  $$('.merge-btn').forEach(b => b.addEventListener('click', merge));
+
+  // ---------- Result ----------
+  async function showResult(bytes, name, pages) {
+    if (state.result) URL.revokeObjectURL(state.result.url);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    state.result = { url, blob, name, pages, size: blob.size };
+    $('#resName').textContent = name;
+    $('#resMeta').textContent = `${pages} page${pages !== 1 ? 's' : ''} · ${fmtSize(blob.size)}`;
+    const dl = $('#downloadBtn'); dl.href = url; dl.download = name;
+    $('#openTabBtn').href = url;
+    $('#resFrame').src = url;
+    $('#resThumb').removeAttribute('src');
+    const canShare = navigator.canShare && navigator.canShare({ files: [new File([blob], name, { type: 'application/pdf' })] });
+    $('#shareBtn').classList.toggle('hidden', !canShare);
+    $('#shareBtn').classList.toggle('inline-flex', !!canShare);
+    setScreen('result');
+    toast('Your PDF is ready!', 'success');
+    try {
+      const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(bytes).slice() }).promise;
+      $('#resThumb').src = await renderThumb(pdf, 1, 200);
+      pdf.destroy();
+    } catch {}
+  }
+  $('#shareBtn').addEventListener('click', async () => {
+    const r = state.result; if (!r) return;
+    try { await navigator.share({ files: [new File([r.blob], r.name, { type: 'application/pdf' })], title: r.name }); } catch {}
+  });
+  $('#backEditBtn').addEventListener('click', () => { setScreen('workspace'); render(); });
+  $('#startOverBtn').addEventListener('click', () => {
+    state.files = []; state.pages = []; state.pagesDirty = true; state.selected.clear(); thumbCache.clear();
+    state.mode = 'files';
+    setScreen('upload');
+  });
+  $('#logoLink').addEventListener('click', e => {
+    e.preventDefault();
+    if (state.files.length) { setScreen('workspace'); render(); } else setScreen('upload');
+  });
+
+  // ---------- Theme ----------
+  $('#themeBtn').addEventListener('click', () => {
+    const d = document.documentElement.classList.toggle('dark');
+    localStorage.setItem('theme', d ? 'dark' : 'light');
+  });
+
+  // Rerender preview on resize
+  let rz; window.addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (pvModal.classList.contains('flex')) drawPreview(); }, 150); });
+})();
+</script>
+</body>
+</html>
